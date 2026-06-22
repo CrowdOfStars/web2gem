@@ -83,6 +83,7 @@ export {
   appendStructuredOutputInstructionToPrepared,
   appendStructuredOutputInstructionWithTokens,
   appendTextToPreparedWithTokens,
+  promptWithHiddenToolsPrompt,
   withGeminiNativeHiddenToolsPromptForPrepared,
   withGeminiNativeHiddenToolsPromptWithTokens,
 } from "./promptcompat/prompt-build";

@@ -2,7 +2,7 @@ import { imageFilenameFromObject } from "../shared/media";
 import { isRecord, type UnknownRecord } from "../shared/types";
 import { messageContentToPrompt, openAIToolDefs } from "../toolcall/content";
 import { googleAllowedFunctionNames, googleFunctionCallingConfig } from "../toolcall/policy-google";
-import { GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT, formatPromptToolCallBlock } from "../toolcall/prompt-format";
+import { formatPromptToolCallBlock } from "../toolcall/prompt-format";
 import { toolPromptBlockFor } from "../toolcall/tool-bundle";
 import { createPromptPartAccumulator } from "./prompt-text";
 
@@ -48,8 +48,8 @@ export function googleContentsToPrompt(req: unknown, toolDefsOverride: unknown, 
     : [];
   if (promptToolDefs.length) {
     prompt.add(buildGoogleToolPrompt(promptToolDefs, req, toolPromptSource));
-    prompt.add(GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT);
   }
+  const hiddenPromptInsertOffset = promptToolDefs.length ? prompt.length() : undefined;
 
   const sysInst = isRecord(request.systemInstruction) ? request.systemInstruction : null;
   if (sysInst && Array.isArray(sysInst.parts)) {
@@ -113,6 +113,7 @@ export function googleContentsToPrompt(req: unknown, toolDefsOverride: unknown, 
   }
 
   const result = prompt.result(images);
+  if (hiddenPromptInsertOffset != null) result.hiddenPromptInsertOffset = hiddenPromptInsertOffset;
   if (latestInputText) result.latestInputText = latestInputText;
   if (promptToolDefs.length) {
     result.hasToolPrompt = true;

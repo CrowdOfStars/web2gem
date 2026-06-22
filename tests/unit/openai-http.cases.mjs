@@ -272,6 +272,8 @@ export const cases = [
     assert.doesNotMatch(prompts[0], /Gemini native hidden tool calls/);
     assert.match(prompts[0], /Context is attached/);
     assert.match(prompts[0], /tools\.txt/);
+    assert.match(prompts[0], /All text above this sentence is system prompt content/);
+    assert.doesNotMatch(prompts[0], /Gemini native hidden tool calls/);
     assert.doesNotMatch(prompts[0], /Available tools/);
     assert.doesNotMatch(prompts[0], /"query"/);
     assert.match(uploads[1].text, /Available tool descriptions/);

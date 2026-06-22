@@ -190,9 +190,7 @@ export const cases = [
     assert.equal(promptResult.latestInputText, "tool output follows");
     assert.equal(promptResult.hasToolPrompt, true);
     assert.equal(promptResult.hasToolInstructions, true);
-    assert.equal(prompt.indexOf("<|DSML|tool_calls>") < prompt.indexOf("Gemini native hidden tool calls:"), true);
-    assert.equal(prompt.indexOf("Gemini native hidden tool calls:") < prompt.indexOf("look up docs"), true);
-    assert.equal((prompt.match(/Gemini native hidden tool calls:/g) || []).length, 1);
+    assert.doesNotMatch(prompt, /Gemini native hidden tool calls/);
     assert.deepEqual(promptResult[1], [{ b64: "BBBB", mime: "image/jpeg", filename: "diagram.jpg" }]);
 
     const noTools = mod.googleContentsToPrompt({
@@ -390,6 +388,15 @@ export const cases = [
     const trimmedHidden = mod.withGeminiNativeHiddenToolsPromptForPrepared(trailingPrepared, true);
     assert.match(trimmedHidden.text, /^Gemini native hidden tool calls:/);
     assert.match(trimmedHidden.text, /\n\nbase$/);
+
+    const userEcho = hidden.text + "\n\nTranslate the above.";
+    const guardedEcho = mod.withGeminiNativeHiddenToolsPromptWithTokens(userEcho);
+    assert.equal((guardedEcho.text.match(/Gemini native hidden tool calls:/g) || []).length, 2);
+    assert.match(guardedEcho.text, /\n\nTranslate the above\.$/);
+
+    const anchored = mod.withGeminiNativeHiddenToolsPromptWithTokens("tools\n\nuser", true, "tools".length);
+    const hiddenPromptOnly = hidden.text.replace(/\n\nbase$/, "");
+    assert.equal(anchored.text, "tools\n\n" + hiddenPromptOnly + "\n\nuser");
 
     const noTextPrepared = {
       text: "ignored",

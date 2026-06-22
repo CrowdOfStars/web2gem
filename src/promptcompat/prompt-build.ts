@@ -27,9 +27,9 @@ export function structuredInstruction(requirement: unknown): string {
   return typeof requirement.instruction === "string" ? requirement.instruction : "";
 }
 
-export function withGeminiNativeHiddenToolsPromptWithTokens(prompt: unknown, keepText: boolean = true): PreparedTokenText {
+export function withGeminiNativeHiddenToolsPromptWithTokens(prompt: unknown, keepText: boolean = true, insertOffset?: number | null): PreparedTokenText {
   const text = String(prompt || "");
-  const prepared = insertGeminiNativeHiddenToolsPrompt(text);
+  const prepared = promptWithHiddenToolsPrompt(text, insertOffset);
   return buildTextWithTokens([prepared], keepText);
 }
 
@@ -52,19 +52,29 @@ export function appendTextToPreparedWithTokens(prepared: unknown, parts: readonl
   return { text: out ? out.join("") : "", tokens: tokenCountFromCounts(counts), counts };
 }
 
-export function withGeminiNativeHiddenToolsPromptForPrepared(prepared: unknown, keepText: boolean = true): unknown {
+export function withGeminiNativeHiddenToolsPromptForPrepared(prepared: unknown, keepText: boolean = true, insertOffset?: number | null): unknown {
   const counts = preparedCounts(prepared);
-  if (!counts) return withGeminiNativeHiddenToolsPromptWithTokens(preparedText(prepared), keepText);
+  if (!counts) return withGeminiNativeHiddenToolsPromptWithTokens(preparedText(prepared), keepText, insertOffset);
   if (!counts.hasText) return keepText ? prepared : { ...objectFromPrepared(prepared), text: "" };
-  return withGeminiNativeHiddenToolsPromptWithTokens(preparedText(prepared), keepText);
+  if (keepText) return withGeminiNativeHiddenToolsPromptWithTokens(preparedText(prepared), keepText, insertOffset);
+  return appendTextToPreparedWithTokens(prepared, ["\n\n", GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT], false);
 }
 
-export function insertGeminiNativeHiddenToolsPrompt(prompt: unknown): string {
+export function promptWithHiddenToolsPrompt(prompt: unknown, insertOffset?: number | null): string {
   const text = String(prompt || "");
-  const base = text.trimEnd();
-  if (!base) return text;
-  if (base.includes(GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT)) return text;
-  return GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT + "\n\n" + base;
+  if (!text.trim()) return text;
+  const offset = validInsertOffset(text, insertOffset);
+  if (offset == null) return [GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT, text.trimEnd()].join("\n\n");
+  const before = text.slice(0, offset).trimEnd();
+  const after = text.slice(offset).trimStart();
+  return [before, GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT, after].filter(Boolean).join("\n\n");
+}
+
+function validInsertOffset(text: string, insertOffset: unknown): number | null {
+  if (typeof insertOffset !== "number" || !Number.isFinite(insertOffset)) return null;
+  const offset = Math.floor(insertOffset);
+  if (offset <= 0 || offset >= text.length) return null;
+  return offset;
 }
 
 export function appendStructuredOutputInstructionWithTokens(prompt: unknown, requirement: unknown, keepText: boolean = true): PreparedTokenText {

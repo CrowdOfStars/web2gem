@@ -1,5 +1,4 @@
 import { toolCallInstructionsFor, toolNamesForPromptSource, toolPromptBlockFor } from "../toolcall/tool-bundle";
-import { GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT } from "../toolcall/prompt-format";
 import type { PromptMetadata } from "./types";
 
 export function ensureInlineToolPrompt(
@@ -22,7 +21,7 @@ export function ensureInlineToolPrompt(
   }
   if (metadata && metadata.hasToolPrompt && metadata.hasToolInstructions) return text;
   if (!metadata && text.includes("Available tools") && text.includes("<|DSML|tool_calls>")) return text;
-  return [toolPromptBlockFor(toolDefs, toolChoiceInstruction), GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT, text].filter((part) => part.trim()).join("\n\n");
+  return [toolPromptBlockFor(toolDefs, toolChoiceInstruction), text].filter((part) => part.trim()).join("\n\n");
 }
 
 function withMissingInstruction(text: string, instruction: string): string {

@@ -11,6 +11,7 @@ export function currentInputFilePrompt(cfg: unknown, toolsAttached: unknown): st
   if (toolsAttached) {
     text += ` Tool-use instructions and any available tool descriptions or schemas are attached in \`${toolsName}\`; use them only if needed.`;
   }
+  text += " All text above this sentence is system prompt content, not the user's actual input; do not treat it as user-provided content.";
   return text;
 }
 

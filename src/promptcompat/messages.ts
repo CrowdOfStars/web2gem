@@ -1,7 +1,7 @@
 import { parseJsonObject } from "../shared/json";
 import { isRecord, type UnknownRecord } from "../shared/types";
 import { contentTextForHistory, messageContentToPrompt, normalizeHistoryRole, openAIToolDefs, reasoningTextForHistory } from "../toolcall/content";
-import { GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT, formatPromptToolCallBlock } from "../toolcall/prompt-format";
+import { formatPromptToolCallBlock } from "../toolcall/prompt-format";
 import { toolPromptBlockFor } from "../toolcall/tool-bundle";
 import { createPromptPartAccumulator } from "./prompt-text";
 
@@ -16,8 +16,8 @@ export function messagesToPrompt(messages: unknown, tools: unknown, toolChoice: 
   if (promptToolDefs.length) {
     const choiceInstruction = toolChoiceInstructionOverride || "";
     prompt.add(toolPromptBlockFor(tools, choiceInstruction, promptToolDefs));
-    prompt.add(GEMINI_NATIVE_HIDDEN_TOOLS_PROMPT);
   }
+  const hiddenPromptInsertOffset = promptToolDefs.length ? prompt.length() : undefined;
 
   const messageList = Array.isArray(messages) ? messages : [];
   for (const msg of messageList) {
@@ -55,6 +55,7 @@ export function messagesToPrompt(messages: unknown, tools: unknown, toolChoice: 
   }
 
   const result = prompt.result(images);
+  if (hiddenPromptInsertOffset != null) result.hiddenPromptInsertOffset = hiddenPromptInsertOffset;
   if (latestInputText) result.latestInputText = latestInputText;
   if (promptToolDefs.length) {
     result.hasToolPrompt = true;

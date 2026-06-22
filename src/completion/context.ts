@@ -2,7 +2,7 @@ import { googleToolDefs, mergeFileRefs, openAIToolDefs } from "../toolcall/conte
 import { buildToolChoiceInstructionFromPolicy } from "../toolcall/policy-openai";
 import type { ToolBundle } from "../toolcall/tool-bundle";
 import { googleContentsToPrompt, googleToolChoiceInstruction } from "../promptcompat/google";
-import { appendStructuredOutputInstructionToPrepared, appendTextToPreparedWithTokens, insertGeminiNativeHiddenToolsPrompt, structuredInstruction, withGeminiNativeHiddenToolsPromptForPrepared, withGeminiNativeHiddenToolsPromptWithTokens } from "../promptcompat/prompt-build";
+import { appendStructuredOutputInstructionToPrepared, appendTextToPreparedWithTokens, structuredInstruction, withGeminiNativeHiddenToolsPromptForPrepared, withGeminiNativeHiddenToolsPromptWithTokens } from "../promptcompat/prompt-build";
 import { buildGoogleHistoryTranscript, buildOpenAIHistoryTranscript, latestGoogleUserInputText, latestOpenAIUserInputText } from "../promptcompat/history";
 import { collectOpenAIRefFileIDs } from "../promptcompat/file-refs";
 import { messagesToPrompt } from "../promptcompat/messages";
@@ -45,6 +45,7 @@ export async function prepareOpenAIGeminiContext(cfg: RuntimeConfig, provider: C
     basePrompt: prompt0,
     basePromptPrepared: promptResultToPrepared(promptResult, prompt0),
     basePromptByteCheck: contextFilePromptByteCheckFromBounded(cfg, promptResult.byteCheck),
+    hiddenPromptInsertOffset: promptResult.hiddenPromptInsertOffset,
     images,
     toolDefs,
     toolPromptSource: tools,
@@ -72,6 +73,7 @@ export async function prepareGoogleGeminiContext(cfg: RuntimeConfig, provider: C
     basePrompt: prompt0,
     basePromptPrepared: promptResultToPrepared(promptResult, prompt0),
     basePromptByteCheck: contextFilePromptByteCheckFromBounded(cfg, promptResult.byteCheck),
+    hiddenPromptInsertOffset: promptResult.hiddenPromptInsertOffset,
     images,
     toolDefs,
     toolPromptSource: toolBundle || effectiveReq,
@@ -93,6 +95,7 @@ type PromptWithAttachmentParams = {
   basePrompt: string;
   basePromptPrepared?: PromptWithTokens | null;
   basePromptByteCheck?: ContextFilePromptByteCheck | null;
+  hiddenPromptInsertOffset?: number | undefined;
   images: unknown;
   toolDefs: ToolDef[];
   toolPromptSource?: unknown;
@@ -121,8 +124,8 @@ async function preparePromptWithAttachments(params: PromptWithAttachmentParams):
     if (!inlinePreparedPrompt) {
       const preparedBase = getBasePromptWithDroppedNotePrepared();
       const inlineHiddenToolsPrompt = preparedBase
-        ? withGeminiNativeHiddenToolsPromptForPrepared(preparedBase) as PromptWithTokens
-        : withGeminiNativeHiddenToolsPromptWithTokens(basePromptWithDroppedNote) as PromptWithTokens;
+        ? withGeminiNativeHiddenToolsPromptForPrepared(preparedBase, true, params.hiddenPromptInsertOffset) as PromptWithTokens
+        : withGeminiNativeHiddenToolsPromptWithTokens(basePromptWithDroppedNote, true, params.hiddenPromptInsertOffset) as PromptWithTokens;
       inlinePreparedPrompt = prepareStructuredPrompt(inlineHiddenToolsPrompt, params.structured);
     }
     return inlinePreparedPrompt;
@@ -136,7 +139,7 @@ async function preparePromptWithAttachments(params: PromptWithAttachmentParams):
     : params.basePromptByteCheck || contextFilePromptByteCheck(params.cfg, contextPromptText);
   let considerContextFiles = shouldConsiderContextFiles(params.cfg, contextPromptText, promptByteCheck);
   if (!promptByteCheck.exceeded) {
-    const inlineByteCheck = inlinePreparedPromptByteCheck(params.cfg, basePromptWithDroppedNote, params.structured);
+    const inlineByteCheck = inlinePreparedPromptByteCheck(params.cfg, basePromptWithDroppedNote, params.structured, params.hiddenPromptInsertOffset);
     if (inlineByteCheck.exceeded) {
       promptByteCheck = inlineByteCheck;
       promptCheckSource = "inline_estimate";
@@ -237,10 +240,10 @@ function contextFilePromptByteCheckFromBounded(cfg: RuntimeConfig, check: Prompt
   return { ...check, thresholdBytes };
 }
 
-function inlinePreparedPromptByteCheck(cfg: RuntimeConfig, prompt: string, structured: unknown): ContextFilePromptByteCheck {
+function inlinePreparedPromptByteCheck(cfg: RuntimeConfig, prompt: string, structured: unknown, hiddenPromptInsertOffset?: number): ContextFilePromptByteCheck {
   const thresholdBytes = contextFileThreshold(cfg);
   const sniffer = createPromptByteLengthSniffer(thresholdBytes);
-  const prepared = insertGeminiNativeHiddenToolsPrompt(prompt);
+  const prepared = withGeminiNativeHiddenToolsPromptWithTokens(prompt, true, hiddenPromptInsertOffset).text;
   let hasText = !!prepared;
   if (prepared) sniffer.append(prepared);
   const instruction = structuredInstruction(structured);

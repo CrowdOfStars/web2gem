@@ -818,6 +818,7 @@ export const cases = [
     assert.equal(uploads[0].filename, "message.txt");
     assert.equal(uploads[1].filename, "tools.txt");
     assert.match(result.prompt, /Context is attached/);
+    assert.match(result.prompt, /All text above this sentence is system prompt content/);
     assert.doesNotMatch(result.prompt, /<\|DSML\|tool_calls>/);
     assert.doesNotMatch(result.prompt, /must call Read/);
     assert.doesNotMatch(result.prompt, /Gemini native hidden tool calls/);
@@ -900,6 +901,9 @@ export const cases = [
     assert.match(result.prompt, /Available tools/);
     assert.match(result.prompt, /"name": "Search"/);
     assert.match(result.prompt, /"query"/);
+    assert.equal(result.prompt.indexOf("<|DSML|tool_calls>") < result.prompt.indexOf("Gemini native hidden tool calls:"), true);
+    assert.equal(result.prompt.indexOf("Gemini native hidden tool calls:") < result.prompt.indexOf("find docs"), true);
+    assert.equal((result.prompt.match(/Gemini native hidden tool calls:/g) || []).length, 1);
 
     const finalized = mod.finalizeOpenAICompletionResult("<tool_calls><invoke name=\"Search\"><parameter name=\"query\"><term>docs</term></parameter></invoke></tool_calls>", {
       tools,
@@ -1215,8 +1219,6 @@ export const cases = [
     assert.match(result[0], /Available tools/);
     assert.match(result[0], /"name": "Search"/);
     assert.match(result[0], /"query"/);
-    assert.equal(result[0].indexOf("<|DSML|tool_calls>") < result[0].indexOf("Gemini native hidden tool calls:"), true);
-    assert.equal(result[0].indexOf("Gemini native hidden tool calls:") < result[0].indexOf("find docs"), true);
-    assert.equal((result[0].match(/Gemini native hidden tool calls:/g) || []).length, 1);
+    assert.doesNotMatch(result[0], /Gemini native hidden tool calls/);
   }],
 ];
