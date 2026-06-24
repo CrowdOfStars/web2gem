@@ -856,6 +856,58 @@ export const cases = [
       mod.closeIdleSocketPool(pool);
     }
   }],
+  ["manages socket idle pool expiry cap and explicit close", async () => {
+    const originalNow = Date.now;
+    let now = 1000;
+    const sockets = [];
+    const makeSocket = (name) => {
+      const socket = {
+        name,
+        closed: 0,
+        close() {
+          this.closed += 1;
+        },
+      };
+      sockets.push(socket);
+      return socket;
+    };
+    Date.now = () => now;
+    try {
+      const pool = mod.createSocketPool();
+      const key = mod.socketPoolKey(new URL("http://example.test:8080/path"), false, 8080);
+      assert.equal(key, "http://example.test:8080");
+
+      const first = makeSocket("first");
+      const second = makeSocket("second");
+      const third = makeSocket("third");
+      mod.putIdleSocket(pool, key, first);
+      mod.putIdleSocket(pool, key, second);
+      mod.putIdleSocket(pool, key, third);
+      assert.equal(first.closed, 1);
+      assert.equal(pool.idle.get(key).length, mod.SOCKET_KEEP_ALIVE_MAX_IDLE_PER_ORIGIN);
+
+      assert.equal(mod.takeIdleSocket(pool, key), third);
+      now += mod.SOCKET_KEEP_ALIVE_IDLE_MS + 1;
+      assert.equal(mod.takeIdleSocket(pool, key), null);
+      assert.equal(second.closed, 1);
+      assert.equal(pool.idle.has(key), false);
+
+      const fourth = makeSocket("fourth");
+      mod.putIdleSocket(pool, key, fourth);
+      mod.closeIdleSocketPool(pool);
+      assert.equal(fourth.closed, 1);
+      assert.equal(pool.idle.size, 0);
+      mod.closeIdleSocketPool(null);
+    } finally {
+      Date.now = originalNow;
+    }
+    assert.deepEqual(sockets.map((socket) => [socket.name, socket.closed]), [
+      ["first", 1],
+      ["second", 1],
+      ["third", 0],
+      ["fourth", 1],
+    ]);
+  }],
   ["enables socket keep-alive on the httpFetch upstream path", async () => {
     const state = {};
     const connect = fakePersistentSocketConnect([

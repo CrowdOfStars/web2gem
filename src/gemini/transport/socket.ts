@@ -10,7 +10,16 @@ import type { ByteChunk, SocketConnect, SocketHttpOptions, SocketHttpResponse } 
 export type { ByteChunk, ByteQueue, SocketConnect, SocketHttpOptions, SocketHttpResponse, SocketPool } from "./socket-types";
 export { _joinByteChunks, bytesFromBody, createByteQueue } from "./byte-queue";
 export { MAX_SOCKET_HEADER_BYTES, parseHttpChunkSizeLine } from "./http-parse";
-export { closeIdleSocketPool, createSocketPool, getDefaultSocketPool, SOCKET_KEEP_ALIVE_IDLE_MS, SOCKET_KEEP_ALIVE_MAX_IDLE_PER_ORIGIN } from "./pool";
+export {
+  closeIdleSocketPool,
+  createSocketPool,
+  getDefaultSocketPool,
+  putIdleSocket,
+  SOCKET_KEEP_ALIVE_IDLE_MS,
+  SOCKET_KEEP_ALIVE_MAX_IDLE_PER_ORIGIN,
+  socketPoolKey,
+  takeIdleSocket,
+} from "./pool";
 export { closeSocketQuietly, socketTimeoutError, withSocketTimeout } from "./timeout";
 
 export let _connect: SocketConnect | null | undefined = undefined;

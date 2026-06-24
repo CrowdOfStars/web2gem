@@ -52,6 +52,33 @@ export const cases = [
       assert.match(result.stderr, /Bundle size gate failed/);
     });
   }],
+  ["accepts benchmark medians within the configured budget", async () => {
+    await withTempFile("bench.txt", "stream_sieve_held_tool          n=20  median=12.500ms  p95=13.000ms\n", async (benchPath) => {
+      const result = await runNodeScript("scripts/check-benchmark.mjs", benchPath, {
+        BENCH_MAX_MEDIAN_MS: "20",
+      });
+      assert.equal(result.code, 0);
+      assert.match(result.stdout, /benchmark gate ok/);
+    });
+  }],
+  ["rejects benchmark medians over the configured budget", async () => {
+    await withTempFile("bench.txt", "stream_sieve_held_tool          n=20  median=25.000ms  p95=26.000ms\n", async (benchPath) => {
+      const result = await runNodeScript("scripts/check-benchmark.mjs", benchPath, {
+        BENCH_MAX_MEDIAN_MS: "20",
+      });
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, /Benchmark gate failed/);
+    });
+  }],
+  ["parses microsecond benchmark output for the performance gate", async () => {
+    await withTempFile("bench.txt", "stream_sieve_held_tool          n=20  median=850.0us  p95=900.0us\n", async (benchPath) => {
+      const result = await runNodeScript("scripts/check-benchmark.mjs", benchPath, {
+        BENCH_MAX_MEDIAN_MS: "1",
+      });
+      assert.equal(result.code, 0);
+      assert.match(result.stdout, /850\.0us <= 1\.000ms/);
+    });
+  }],
   ["skips Docker smoke when Docker is not installed", async () => {
     await withTempDir(async (dir) => {
       const result = await runNodeScript("scripts/docker-smoke.mjs", null, {
@@ -93,6 +120,7 @@ function fullCoverageSummary() {
     "src/gemini/app-page.ts": coverageEntry(),
     "src/gemini/index.ts": coverageEntry(),
     "src/gemini/client/index.ts": coverageEntry(),
+    "src/gemini/client/parser.ts": coverageEntry(),
     "src/gemini/transport/http.ts": coverageEntry(),
     "src/gemini/uploads/index.ts": coverageEntry(),
     "src/http/core/json.ts": coverageEntry(),
@@ -106,6 +134,7 @@ function fullCoverageSummary() {
     "src/promptcompat/messages.ts": coverageEntry(),
     "src/promptcompat/responses-input.ts": coverageEntry(),
     "src/shared/tokens.ts": coverageEntry(),
+    "src/toolcall/markdown.ts": coverageEntry(),
     "src/toolcall/structured.ts": coverageEntry(),
     "src/toolstream/index.ts": coverageEntry(),
   };

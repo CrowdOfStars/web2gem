@@ -45,6 +45,20 @@ export const cases = [
     assert.match(mod.wrbResponseShapeSummary(raw), /wrbLines=2/);
     assert.match(mod.wrbResponseShapeSummary(raw), /textParts=2/);
   }],
+  ["summarizes WRB parse issue branches without throwing", async () => {
+    const cases = [
+      JSON.stringify({ not: "an array" }),
+      JSON.stringify([["wrb.fr", null, null]]),
+      JSON.stringify([["wrb.fr", null, JSON.stringify([null])]]),
+      JSON.stringify([["wrb.fr", null, JSON.stringify([null, null, null, null, "not parts"])]]),
+      JSON.stringify([["wrb.fr", null, JSON.stringify([null, null, null, null, [[null, []]]])]]),
+    ];
+    const summary = mod.wrbResponseShapeSummary(cases.join("\n"));
+    assert.match(summary, /wrbLines=4/);
+    assert.match(summary, /parsedEnvelopes=4/);
+    assert.match(summary, /parsedInnerPayloads=3/);
+    assert.deepEqual(cases.map((item) => mod.extractTextsFromLine(item)), [[], [], [], [], []]);
+  }],
   ["bounds app page marker scanning for unterminated quoted values", async () => {
     const oversized = `"qKIAYe":"${"x".repeat(10 * 1024)}`;
     assert.deepEqual(await mod.extractGeminiAppPageTokens(textResponse(oversized)), {});
@@ -58,6 +72,17 @@ export const cases = [
     assert.deepEqual([...extractor.consumeLine(wrbLine([" hello"]))], ["hello"]);
     assert.deepEqual([...extractor.consumeLine(wrbLine([" hello world"]))], [" world"]);
     assert.deepEqual([...extractor.consumeLine(wrbLine([" hello world"]))], []);
+  }],
+  ["streams visible deltas after artifact-bearing cumulative chunks", async () => {
+    const extractor = mod.createStreamTextExtractor();
+    const artifact = [
+      "answer",
+      "```python?code_reference&code_event_index=1",
+      "print('hidden')",
+      "```",
+    ].join("\n");
+    assert.equal([...extractor.consumeLine(wrbLine([artifact]))].join(""), "answer\n");
+    assert.deepEqual([...extractor.consumeLine(wrbLine([`${artifact}\nmore visible`]))], ["more visible"]);
   }],
   ["builds Gemini payload with file refs and extra fields", async () => {
     const payload = mod.buildPayload(

@@ -441,6 +441,19 @@ export const cases = [
     assert.equal(mod.markdownProtectedSpanStartAtCut(cutText, 0), -1);
     assert.equal(mod.markdownProtectedSpanStartAtCut(cutText, cutText.length), -1);
   }],
+  ["covers markdown protection CRLF ranges and inline span edges", async () => {
+    const crlfFence = "intro\r\n```ts\r\nconst x = 1;\r\n```\r\noutro";
+    const ranges = mod.markdownProtectedRanges(crlfFence);
+    assert.deepEqual(ranges, [{ start: "intro\r\n".length, end: "intro\r\n```ts\r\nconst x = 1;\r\n```\r\n".length }]);
+    assert.equal(mod.isMarkdownProtectedPosition(crlfFence, crlfFence.indexOf("const")), true);
+    assert.equal(mod.isMarkdownProtectedPosition(crlfFence, crlfFence.indexOf("outro")), false);
+
+    const spans = "a ``two ticks`` and `one tick` done";
+    assert.equal(mod.isInsideSimpleMarkdownCodeSpan(spans, spans.indexOf("two")), true);
+    assert.equal(mod.isInsideSimpleMarkdownCodeSpan(spans, spans.indexOf("one")), true);
+    assert.equal(mod.isInsideSimpleMarkdownCodeSpan(spans, spans.indexOf("done")), false);
+    assert.equal(mod.markdownProtectedSpanStartAtCut("prefix ``unterminated", "prefix ``unterminated".length - 1), "prefix ".length);
+  }],
   ["accepts fullwidth confusable DSML tool markup", async () => {
     const confusable = "＜|DSML|tool_calls＞＜|DSML|invoke name＝＂Read＂＞＜|DSML|parameter name＝＂file_path＂＞README.md＜/|DSML|parameter＞＜/|DSML|invoke＞＜/|DSML|tool_calls＞";
     const [clean, toolCalls] = mod.parseToolCalls(confusable, [{ type: "function", function: { name: "Read", parameters: { type: "object" } } }]);

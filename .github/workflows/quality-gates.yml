@@ -21,7 +21,7 @@ env:
 
 jobs:
   ubuntu-quality:
-    name: Ubuntu Quality Gates
+    name: Required Gates - Ubuntu
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -41,26 +41,37 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Static Gate
+      - name: Required - Static Analysis
         run: pnpm check:static
 
-      - name: TypeScript Gate
+      - name: Required - TypeScript
         run: pnpm typecheck
 
-      - name: Architecture Gate
+      - name: Required - Architecture
         run: pnpm check:arch
 
-      - name: Coverage Gate
+      - name: Required - Coverage
         run: pnpm coverage:ci
 
-      - name: Smoke Gate
+      - name: Required - Smoke
         run: pnpm smoke
 
-      - name: Bundle Size Gate
+      - name: Required - Performance Regression
+        run: pnpm check:bench
+
+      - name: Observation - Tool Sieve Benchmark Snapshot
+        continue-on-error: true
+        env:
+          BENCH_CASES: stream_sieve_held_tool
+          BENCH_ITERS: "20"
+          BENCH_WARMUP: "5"
+        run: node scripts/bench.mjs
+
+      - name: Required - Bundle Size
         run: pnpm check:size
 
   node-unit:
-    name: Node Unit (${{ matrix.os }})
+    name: Required Gates - Node Unit (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -86,11 +97,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Node Unit Gate
+      - name: Required - Node Unit
         run: pnpm unit:quick
 
   docker-smoke:
-    name: Release Target Docker Smoke
+    name: Release Required Gate - Docker Smoke
     if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     steps:
@@ -102,5 +113,5 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Docker Smoke Gate
+      - name: Required - Docker Smoke
         run: node scripts/docker-smoke.mjs

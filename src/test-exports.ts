@@ -101,7 +101,13 @@ export { createPromptPartAccumulator } from "./promptcompat/prompt-text";
 export { messagesToPrompt } from "./promptcompat/messages";
 export { buildGoogleToolPrompt, googleContentsToOpenAIMessages, googleContentsToPrompt, googleToolChoiceInstruction } from "./promptcompat/google";
 export { buildGoogleHistoryTranscript, buildOpenAIHistoryTranscript, latestGoogleUserInputText, latestOpenAIUserInputText } from "./promptcompat/history";
-export { normalizeResponsesInputAsMessages, normalizeResponsesInputValueAsMessages, responsesMessagesFromRequest, stringifyToolCallArguments } from "./promptcompat/responses-input";
+export {
+  normalizeResponsesInputAsMessages,
+  normalizeResponsesInputAsMessagesStrict,
+  normalizeResponsesInputValueAsMessages,
+  responsesMessagesFromRequest,
+  stringifyToolCallArguments,
+} from "./promptcompat/responses-input";
 export {
   buildCorrectToolExamples,
   buildReadToolCacheGuard,
@@ -243,4 +249,21 @@ export { handleGoogleGenerate } from "./http/google/handlers";
 export { streamGooglePlain, streamGoogleTools } from "./http/google/stream";
 export { streamResponsesWithToolSieve } from "./http/openai/responses-stream";
 export { streamGoogleToolCompletionEvents } from "./completion/google";
-export { _joinByteChunks, _setConnectForTest, bytesFromBody, closeIdleSocketPool, closeSocketQuietly, createByteQueue, createSocketPool, parseHttpChunkSizeLine, socketHttp, socketTimeoutError, withSocketTimeout } from "./gemini/transport/socket";
+export {
+  _joinByteChunks,
+  _setConnectForTest,
+  bytesFromBody,
+  closeIdleSocketPool,
+  closeSocketQuietly,
+  createByteQueue,
+  createSocketPool,
+  parseHttpChunkSizeLine,
+  putIdleSocket,
+  SOCKET_KEEP_ALIVE_IDLE_MS,
+  SOCKET_KEEP_ALIVE_MAX_IDLE_PER_ORIGIN,
+  socketHttp,
+  socketPoolKey,
+  socketTimeoutError,
+  takeIdleSocket,
+  withSocketTimeout,
+} from "./gemini/transport/socket";

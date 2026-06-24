@@ -90,6 +90,31 @@ export const cases = [
     assert.deepEqual(messages[3], { role: "user", content: "visible output" });
     assert.equal(messages.length, 4);
   }],
+  ["validates Responses input strictly before normalization", async () => {
+    assert.deepEqual(mod.normalizeResponsesInputAsMessagesStrict("bad"), { error: "request body must be a JSON object" });
+    assert.deepEqual(mod.normalizeResponsesInputAsMessagesStrict({ input: "hello" }), { messages: [{ role: "user", content: "hello" }] });
+    assert.deepEqual(mod.normalizeResponsesInputAsMessagesStrict({ input: { role: "user", text: "hello" } }), { messages: [{ role: "user", content: "hello" }] });
+    assert.deepEqual(mod.normalizeResponsesInputAsMessagesStrict({ input: { role: "bogus", content: "x" } }), { messages: [{ role: "bogus", content: "x" }] });
+
+    const invalidInputs = [
+      [{ input: [""] }, /item 0 is empty/],
+      [{ input: [42] }, /item 0 must be a supported object or string/],
+      [{ input: [{ role: "tool" }] }, /tool message requires content/],
+      [{ input: [{ role: "user" }] }, /message requires content/],
+      [{ input: [{ role: "assistant" }] }, /assistant message requires content or tool calls/],
+      [{ input: [{ type: "message" }] }, /message requires content/],
+      [{ input: [{ type: "tool_result" }] }, /tool result requires output/],
+      [{ input: [{ type: "function_call" }] }, /function call requires name/],
+      [{ input: [{ type: "reasoning" }] }, /reasoning item requires text/],
+      [{ input: [{ type: "input_text", text: "" }] }, /text item requires text/],
+      [{ input: [{ type: "custom_event", text: "ignored" }] }, /unsupported type: custom_event/],
+      [{ input: true }, /must be a string, object, or array/],
+    ];
+    for (const [req, pattern] of invalidInputs) {
+      const result = mod.normalizeResponsesInputAsMessagesStrict(req);
+      assert.match(result.error, pattern);
+    }
+  }],
   ["preserves top-level Responses input_file items for upload collection", async () => {
     const messages = mod.normalizeResponsesInputValueAsMessages([
       { type: "input_text", text: "review this" },
