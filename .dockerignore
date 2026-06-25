@@ -3,6 +3,7 @@
 .claude
 .agents
 .codex
+.cursor
 .trellis
 .wrangler
 node_modules
@@ -11,9 +12,3 @@ dist-coverage
 coverage
 *.log
 AGENTS.md
-
-# Nested / unrelated repositories in this workspace
-ds2api
-Gemini-FastAPI
-Gemini-API
-HelloGML

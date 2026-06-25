@@ -43,8 +43,9 @@ export function buildPayload(
   thinkMode: number,
   fileRefs: readonly PayloadFileRef[] | null,
   extra: Record<number, unknown> | null,
+  requestId: string = uuid(),
 ): string {
-  const inner = createGeminiPayloadInner(prompt, modelId, thinkMode, fileRefs);
+  const inner = createGeminiPayloadInner(prompt, modelId, thinkMode, fileRefs, requestId.toUpperCase());
   applyModelPayloadExtras(inner, extra);
   const outer = [null, JSON.stringify(inner)];
   return new URLSearchParams({ "f.req": JSON.stringify(outer) }).toString();
@@ -55,6 +56,7 @@ function createGeminiPayloadInner(
   modelId: number,
   thinkMode: number,
   fileRefs: readonly PayloadFileRef[] | null,
+  requestId: string,
 ): unknown[] {
   const inner = new Array(GEMINI_PAYLOAD_INNER_LENGTH);
   if (fileRefs && fileRefs.length) {
@@ -80,7 +82,7 @@ function createGeminiPayloadInner(
   inner[GEMINI_PAYLOAD_FIELD.responseOptions] = [4];
   inner[GEMINI_PAYLOAD_FIELD.mediaMode] = [2];
   inner[GEMINI_PAYLOAD_FIELD.safetyMode] = 0;
-  inner[GEMINI_PAYLOAD_FIELD.requestId] = uuid();
+  inner[GEMINI_PAYLOAD_FIELD.requestId] = requestId;
   inner[GEMINI_PAYLOAD_FIELD.toolContext] = [];
   inner[GEMINI_PAYLOAD_FIELD.clientFeature] = 1;
   inner[GEMINI_PAYLOAD_FIELD.modelFamily] = modelId;
@@ -109,7 +111,11 @@ export function getUrl(cfg: RuntimeConfig): string {
   );
 }
 
-export async function buildHeaders(cfg: RuntimeConfig): Promise<Record<string, string>> {
+export async function buildHeaders(
+  cfg: RuntimeConfig,
+  modelHeaders: Record<string, string> | null = null,
+  requestId: string | null = null,
+): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
     "Origin": "https://gemini.google.com",
@@ -118,6 +124,8 @@ export async function buildHeaders(cfg: RuntimeConfig): Promise<Record<string, s
     "User-Agent": GEMINI_WEB_USER_AGENT,
     "Accept-Language": "en-US,en;q=0.9",
   };
+  if (modelHeaders) Object.assign(headers, modelHeaders);
+  if (requestId) headers["x-goog-ext-525005358-jspb"] = `["${requestId.toUpperCase()}",1]`;
   if (cfg.cookie) headers["Cookie"] = cfg.cookie;
   if (cfg.sapisid) headers["Authorization"] = await makeSapisidHash(cfg.sapisid);
   return headers;

@@ -1,6 +1,6 @@
 import { getPageTokens } from "../uploads/index";
 import { httpFetch } from "../transport";
-import { abortError, isAbortError, log, throwIfAborted } from "../../shared/runtime";
+import { abortError, isAbortError, log, throwIfAborted, uuid } from "../../shared/runtime";
 import {
   dataAnalysisEmptyResponseError,
   invalidGeminiCookieError,
@@ -50,9 +50,11 @@ async function fetchGeminiStreamGenerate(
   activeCfg: RuntimeConfig,
   body: string,
   signal: AbortSignal | null | undefined = undefined,
+  modelHeaders: Record<string, string> | null = null,
+  requestId: string | null = null,
 ) {
   const url = getUrl(activeCfg);
-  const headers = await buildHeaders(activeCfg);
+  const headers = await buildHeaders(activeCfg, modelHeaders, requestId);
   const requestBody = await appendGeminiPageToken(activeCfg, body);
   return httpFetch(url, {
     method: "POST",
@@ -73,15 +75,17 @@ export async function generate(
   thinkMode: number,
   extra: Record<number, unknown> | null,
   fileRefs: GeminiFileRef[] | null | undefined,
+  modelHeaders: Record<string, string> | null = null,
 ): Promise<string> {
   let lastErr: unknown;
   let activeCfg = await configWithCachedGeminiBuildLabel(await configWithFreshGeminiCookie(cfg));
   let refreshedBL = false;
   let refreshedCookie = false;
-  const body = buildPayload(prompt, modelId, thinkMode, fileRefs || null, extra);
+  const requestId = uuid().toUpperCase();
+  const body = buildPayload(prompt, modelId, thinkMode, fileRefs || null, extra, requestId);
   for (let attempt = 0; attempt < cfg.retry_attempts; attempt++) {
     try {
-      const resp = await fetchGeminiStreamGenerate(cfg, activeCfg, body);
+      const resp = await fetchGeminiStreamGenerate(cfg, activeCfg, body, undefined, modelHeaders, requestId);
       const cookieErr = invalidGeminiCookieError(cfg, resp.status);
       if (cookieErr) throw cookieErr;
       const raw = await resp.text();
@@ -131,19 +135,21 @@ export async function* generateStream(
   extra: Record<number, unknown> | null,
   fileRefs: GeminiFileRef[] | null | undefined,
   options: GeminiStreamOptions = {},
+  modelHeaders: Record<string, string> | null = null,
 ): AsyncIterable<string> {
   let lastErr: unknown;
   let yielded = false;
   let activeCfg = await configWithCachedGeminiBuildLabel(await configWithFreshGeminiCookie(cfg));
   let refreshedBL = false;
   let refreshedCookie = false;
-  const body = buildPayload(prompt, modelId, thinkMode, fileRefs || null, extra);
+  const requestId = uuid().toUpperCase();
+  const body = buildPayload(prompt, modelId, thinkMode, fileRefs || null, extra, requestId);
   const signal = options && options.signal;
 
   for (let attempt = 0; attempt < cfg.retry_attempts; attempt++) {
     try {
       throwIfAborted(signal);
-      const resp = await fetchGeminiStreamGenerate(cfg, activeCfg, body, signal);
+      const resp = await fetchGeminiStreamGenerate(cfg, activeCfg, body, signal, modelHeaders, requestId);
       const cookieErr = invalidGeminiCookieError(cfg, resp.status);
       if (cookieErr) throw cookieErr;
       if (!resp.body) {

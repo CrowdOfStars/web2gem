@@ -6,20 +6,30 @@ export type ModelConfig = {
   think: number;
   desc: string;
   extra?: Record<number, unknown>;
+  modelHeaders?: Record<string, string>;
 };
 
 export type ResolvedModel =
-  | { name: string; modeId: number; thinkMode: number; extra: Record<number, unknown> | null; error?: undefined }
+  | { name: string; modeId: number; thinkMode: number; extra: Record<number, unknown> | null; modelHeaders: Record<string, string> | null; error?: undefined }
   | { error: string; name?: undefined; modeId?: undefined; thinkMode?: undefined; extra?: undefined };
 
 export const MIN_THINK_LEVEL = 0;
 export const MAX_THINK_LEVEL = 4;
+const MODEL_HEADER_KEY = "x-goog-ext-525001261-jspb";
+
+function webModelHeaders(modelId: string, capacityTail: number): Record<string, string> {
+  return {
+    [MODEL_HEADER_KEY]: `[1,null,null,null,"${modelId}",null,null,0,[4],null,null,${capacityTail}]`,
+    "x-goog-ext-73010989-jspb": "[0]",
+    "x-goog-ext-73010990-jspb": "[0]",
+  };
+}
 
 export const MODELS: Record<string, ModelConfig> = {
-  "gemini-3.5-flash": { mode: 1, think: 4, desc: "Fast general-purpose model" },
-  "gemini-3.5-flash-thinking": { mode: 2, think: 0, desc: "Deep thinking mode, longest output (~20k chars)" },
-  "gemini-3.1-pro": { mode: 3, think: 4, desc: "Pro model (requires cookie for real routing)" },
-  "gemini-3.1-pro-enhanced": { mode: 3, think: 4, extra: { 31: 2, 80: 3 }, desc: "Pro with enhanced output (experimental)" },
+  "gemini-3.5-flash": { mode: 1, think: 4, modelHeaders: webModelHeaders("fbb127bbb056c959", 1), desc: "Fast general-purpose model" },
+  "gemini-3.5-flash-thinking": { mode: 2, think: 0, modelHeaders: webModelHeaders("5bf011840784117a", 1), desc: "Deep thinking mode, longest output (~20k chars)" },
+  "gemini-3.1-pro": { mode: 3, think: 4, modelHeaders: webModelHeaders("9d8ca3786ebdfbea", 1), desc: "Pro model (requires cookie for real routing)" },
+  "gemini-3.1-pro-enhanced": { mode: 3, think: 4, extra: { 31: 2, 80: 3 }, modelHeaders: webModelHeaders("e6fa609c3fa255c0", 2), desc: "Pro with enhanced output (experimental)" },
   "gemini-auto": { mode: 4, think: 4, desc: "Auto model selection" },
   "gemini-3.5-flash-thinking-lite": { mode: 5, think: 0, desc: "Dynamic thinking with adaptive depth" },
   "gemini-flash-lite": { mode: 6, think: 4, desc: "Lightweight fast model" },
@@ -54,5 +64,6 @@ export function resolveModel(modelName: unknown, def: unknown): ResolvedModel {
     modeId: cfg.mode,
     thinkMode: thinkOverride !== null ? thinkOverride : cfg.think,
     extra: cfg.extra || null,
+    modelHeaders: cfg.modelHeaders || null,
   };
 }

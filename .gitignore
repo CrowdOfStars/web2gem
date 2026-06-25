@@ -11,6 +11,7 @@ AGENTS.md
 # Local agent and workspace state
 .claude/
 .codex/
+.cursor/
 .trellis/.backup-*
 .trellis/.cache/
 .trellis/.runtime/

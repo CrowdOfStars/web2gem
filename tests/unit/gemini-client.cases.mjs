@@ -91,6 +91,7 @@ export const cases = [
       2,
       [{ ref: "file-ref", name: "doc.txt" }],
       { 31: 2, 80: 3 },
+      "req-test",
     );
     const outer = JSON.parse(new URLSearchParams(payload).get("f.req"));
     const inner = JSON.parse(outer[1]);
@@ -100,6 +101,7 @@ export const cases = [
     assert.equal(inner[0][3][0][1], "doc.txt");
     assert.equal(inner[3], null);
     assert.equal(inner[31], 2);
+    assert.equal(inner[59], "REQ-TEST");
     assert.equal(inner[79], 123);
     assert.equal(inner[80], 3);
     await assert.rejects(() => mod.buildPayload("prompt", 123, 2, null, { 79: 999 }), /Unsupported Gemini model extra payload field/);
@@ -114,10 +116,14 @@ export const cases = [
     assert.match(url, /^https:\/\/gemini\.example\/_\/BardChatUi\/data\/assistant\.lamda\.BardFrontendService\/StreamGenerate\?/);
     assert.match(url, /bl=boq%20test/);
 
-    const headers = await mod.buildHeaders(cfg);
+    const headers = await mod.buildHeaders(cfg, {
+      "x-goog-ext-525001261-jspb": "[1,null,null,null,\"model-id\",null,null,0,[4],null,null,1]",
+    }, "request-id");
     assert.equal(headers.Cookie, "SID=ok");
     assert.equal(headers.Origin, "https://gemini.google.com");
     assert.equal(headers["X-Same-Domain"], "1");
+    assert.equal(headers["x-goog-ext-525001261-jspb"], "[1,null,null,null,\"model-id\",null,null,0,[4],null,null,1]");
+    assert.equal(headers["x-goog-ext-525005358-jspb"], "[\"REQUEST-ID\",1]");
     assert.equal(headers.Authorization, undefined);
   }],
   ["parses and merges cookie headers with quoted values", async () => {
@@ -931,20 +937,62 @@ export const cases = [
       log_requests: false,
     };
     const provider = mod.createGeminiCompletionProvider(cfg);
+    const rm = mod.resolveModel("gemini-3.1-pro", "gemini-3.5-flash");
     await withFetch(async (url, init) => {
       assert.match(String(url), /StreamGenerate/);
       const payload = new URLSearchParams(String(init.body)).get("f.req");
+      const outer = JSON.parse(payload);
+      const inner = JSON.parse(outer[1]);
       assert.match(payload, /provider prompt/);
       assert.match(payload, /file-ref/);
+      assert.equal(init.headers["x-goog-ext-525001261-jspb"], "[1,null,null,null,\"9d8ca3786ebdfbea\",null,null,0,[4],null,null,1]");
+      assert.equal(init.headers["x-goog-ext-73010989-jspb"], "[0]");
+      assert.equal(init.headers["x-goog-ext-73010990-jspb"], "[0]");
+      assert.equal(JSON.parse(init.headers["x-goog-ext-525005358-jspb"])[0], inner[59]);
       return new Response(wrbLine(["provider answer"]), { status: 200 });
     }, async () => {
       const text = await provider.generateText({
         prompt: "provider prompt",
-        rm: { name: "gemini-3.5-flash", modeId: 1, thinkMode: 4, extra: null },
+        rm,
         fileRefs: [{ ref: "file-ref", name: "doc.txt" }],
       });
       assert.equal(text, "provider answer");
     });
+  }],
+  ["logs Gemini routing fields through the completion provider", async () => {
+    const cfg = {
+      gemini_origin: "https://gemini.example",
+      gemini_bl: "boq_test",
+      cookie: "",
+      sapisid: "",
+      request_timeout_sec: 180,
+      retry_attempts: 1,
+      retry_delay_sec: 0,
+      current_input_file_min_bytes: 1000000,
+      upstream_socket: false,
+      log_requests: true,
+    };
+    const provider = mod.createGeminiCompletionProvider(cfg);
+    const rm = mod.resolveModel("gemini-3.1-pro-enhanced", "gemini-3.5-flash");
+    const logs = [];
+    await withConsoleLog((line) => logs.push(String(line)), async () => {
+      await withFetch(async () => new Response(wrbLine(["provider answer"]), { status: 200 }), async () => {
+        const text = await provider.generateText({
+          prompt: "secret prompt",
+          rm,
+          fileRefs: null,
+        });
+        assert.equal(text, "provider answer");
+      });
+    });
+    const routeLog = logs.find((line) => line.includes("stage=gemini_route"));
+    assert.match(routeLog, /model=gemini-3\.1-pro-enhanced/);
+    assert.match(routeLog, /modelFamily=3/);
+    assert.match(routeLog, /thinkingMode=4/);
+    assert.match(routeLog, /enhancedMode=2/);
+    assert.match(routeLog, /enhancedRouting=3/);
+    assert.match(routeLog, /webModelHeader=true/);
+    assert.equal(logs.some((line) => line.includes("secret prompt")), false);
   }],
   ["streams text through the Gemini completion provider and rejects unresolved models", async () => {
     const cfg = {

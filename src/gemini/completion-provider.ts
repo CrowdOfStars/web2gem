@@ -4,6 +4,7 @@ import type { RuntimeConfig } from "../config";
 import type { ResolvedModel } from "../models";
 import type { CompletionProvider, CompletionProviderOptions, CompletionTextInput } from "../completion/ports";
 import type { AttachmentPlan } from "../attachments/types";
+import { logStage } from "../shared/runtime";
 
 type ResolvedModelOK = Extract<ResolvedModel, { name: string }>;
 
@@ -11,11 +12,13 @@ export function createGeminiCompletionProvider(cfg: RuntimeConfig): CompletionPr
   return {
     generateText(input: CompletionTextInput) {
       const model = requireResolvedModel(input.rm);
-      return generate(cfg, input.prompt, model.modeId, model.thinkMode, model.extra, input.fileRefs);
+      if (cfg.log_requests) logGeminiRoute(cfg, model, false);
+      return generate(cfg, input.prompt, model.modeId, model.thinkMode, model.extra, input.fileRefs, model.modelHeaders);
     },
     async *streamText(input: CompletionTextInput, options: CompletionProviderOptions = {}) {
       const model = requireResolvedModel(input.rm);
-      for await (const delta of generateStream(cfg, input.prompt, model.modeId, model.thinkMode, model.extra, input.fileRefs, options)) {
+      if (cfg.log_requests) logGeminiRoute(cfg, model, true);
+      for await (const delta of generateStream(cfg, input.prompt, model.modeId, model.thinkMode, model.extra, input.fileRefs, options, model.modelHeaders)) {
         const text = String(delta || "");
         if (text) yield text;
       }
@@ -32,4 +35,16 @@ export function createGeminiCompletionProvider(cfg: RuntimeConfig): CompletionPr
 function requireResolvedModel(rm: ResolvedModel): ResolvedModelOK {
   if (rm.name === undefined) throw new Error(rm.error || "model is not resolved");
   return rm;
+}
+
+function logGeminiRoute(cfg: RuntimeConfig, model: ResolvedModelOK, stream: boolean): void {
+  logStage(cfg, "gemini_route", {
+    model: model.name,
+    modelFamily: model.modeId,
+    thinkingMode: model.thinkMode,
+    enhancedMode: model.extra ? model.extra[31] : undefined,
+    enhancedRouting: model.extra ? model.extra[80] : undefined,
+    webModelHeader: !!model.modelHeaders,
+    stream,
+  });
 }
