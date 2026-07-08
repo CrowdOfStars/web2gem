@@ -191,7 +191,9 @@ export const cases = [
       },
     }, async () => {
       assert.deepEqual(Array.from(mod.randomBytes(3)), [0xab, 0xac, 0xad]);
-      assert.equal(mod.randHex(5), "abaca");
+      await withoutTypedArrayHexMethod(async () => {
+        assert.equal(mod.randHex(5), "abaca");
+      });
       assert.equal(mod.uuid(), "native-uuid");
     });
   }],
@@ -1233,6 +1235,17 @@ export const cases = [
     assert.match(writes.join(""), /"code":"socket_reset"/);
   }],
 ];
+
+async function withoutTypedArrayHexMethod(run) {
+  const toHexDescriptor = Object.getOwnPropertyDescriptor(Uint8Array.prototype, "toHex");
+  Object.defineProperty(Uint8Array.prototype, "toHex", { value: undefined, configurable: true, writable: true });
+  try {
+    return await run();
+  } finally {
+    if (toHexDescriptor) Object.defineProperty(Uint8Array.prototype, "toHex", toHexDescriptor);
+    else delete Uint8Array.prototype.toHex;
+  }
+}
 
 async function gzipText(text) {
   const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));

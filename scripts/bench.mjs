@@ -83,7 +83,7 @@ const structuredPatternRequirement = {
     },
   },
 };
-const base64Input = makeBytes(BASE64_BYTES).toBase64();
+const base64Input = bytesToBase64(makeBytes(BASE64_BYTES));
 const appPageTokensHtml = makeAppHtml(APP_HTML_BYTES, '{"qKIAYe":"push-bench","SNlM0e":"at-bench"}');
 const appBuildLabelHtml = makeAppHtml(APP_HTML_BYTES, '<script>{"cfb2h":"bench-bl"}</script>');
 const structuredJsonNoise = "{".repeat(STRUCTURED_JSON_NOISE_BYTES);
@@ -463,6 +463,18 @@ function makeBytes(length) {
   const out = new Uint8Array(length);
   for (let i = 0; i < out.length; i++) out[i] = i & 255;
   return out;
+}
+
+function bytesToBase64(bytes) {
+  const native = bytes.toBase64;
+  if (typeof native === "function") return native.call(bytes);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
 }
 
 function makeSocketChunks(totalBytes, chunkBytes) {

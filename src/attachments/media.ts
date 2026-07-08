@@ -331,8 +331,9 @@ export function validateBase64Shape(raw: unknown): string {
 export function base64ToBytes(b64: unknown): Uint8Array {
   const compact = validateBase64Shape(b64);
   const hasBase64UrlAlphabet = /[-_]/.test(compact);
-  if (typeof (Uint8Array as any).fromBase64 === "function") {
-    return (Uint8Array as any).fromBase64(
+  const nativeFromBase64 = (Uint8Array as Uint8ArrayBase64Constructor).fromBase64;
+  if (typeof nativeFromBase64 === "function") {
+    return nativeFromBase64(
       compact,
       hasBase64UrlAlphabet ? { alphabet: "base64url" } : undefined,
     );
@@ -341,24 +342,37 @@ export function base64ToBytes(b64: unknown): Uint8Array {
   if (hasBase64UrlAlphabet) {
     standardB64 = compact.replace(/-/g, "+").replace(/_/g, "/");
   }
-  return Uint8Array.from(Buffer.from(standardB64, "base64"));
+  const padded = standardB64.padEnd(Math.ceil(standardB64.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    out[i] = binary.charCodeAt(i);
+  }
+  return out;
 }
 
 export function bytesToBase64(bytes: Uint8Array): string {
-  if (typeof (bytes as any).toBase64 === "function") {
-    return (bytes as any).toBase64();
+  const nativeToBase64 = (bytes as Uint8ArrayBase64).toBase64;
+  if (typeof nativeToBase64 === "function") {
+    return nativeToBase64.call(bytes);
   }
-  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
 }
 
 type Uint8ArrayBase64Alphabet = "base64" | "base64url";
 
 type Uint8ArrayBase64Constructor = typeof Uint8Array & {
-  fromBase64(value: string, options?: { alphabet?: Uint8ArrayBase64Alphabet }): Uint8Array;
+  fromBase64?: (value: string, options?: { alphabet?: Uint8ArrayBase64Alphabet }) => Uint8Array;
 };
 
 type Uint8ArrayBase64 = Uint8Array & {
-  toBase64(options?: { alphabet?: Uint8ArrayBase64Alphabet; omitPadding?: boolean }): string;
+  toBase64?: (options?: { alphabet?: Uint8ArrayBase64Alphabet; omitPadding?: boolean }) => string;
 };
 
 function uploadInputFromParsed(parsed: ParsedUploadUrl, explicitMime: string, filename: string): UploadFileInput {

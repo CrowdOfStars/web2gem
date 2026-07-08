@@ -48,6 +48,16 @@ export const cases = [
     assert.deepEqual(Array.from(mod.base64ToBytes("aGVsbG8")), [104, 101, 108, 108, 111]);
     assert.deepEqual(Array.from(mod.base64ToBytes("-_8")), [251, 255]);
   }],
+  ["decodes and encodes base64 without TypedArray runtime helpers", async () => {
+    await withoutTypedArrayEncodingMethods(async () => {
+      assert.deepEqual(Array.from(mod.base64ToBytes("aGVsbG8")), [104, 101, 108, 108, 111]);
+      assert.deepEqual(Array.from(mod.base64ToBytes("-_8")), [251, 255]);
+      assert.deepEqual(mod.parseUploadUrl("data:text/plain,hello"), {
+        b64: "aGVsbG8=",
+        mime: "text/plain",
+      });
+    });
+  }],
   ["uploads direct images through preferred multipart without content-push auth", async () => {
     mod.resetActiveGeminiCookieForTest();
     mod.resetGeminiUploadCachesForTest();
@@ -637,6 +647,21 @@ export const cases = [
     assert.match(stageLog, /droppedFiles=1/);
   }],
 ];
+
+async function withoutTypedArrayEncodingMethods(run) {
+  const fromBase64Descriptor = Object.getOwnPropertyDescriptor(Uint8Array, "fromBase64");
+  const toBase64Descriptor = Object.getOwnPropertyDescriptor(Uint8Array.prototype, "toBase64");
+  Object.defineProperty(Uint8Array, "fromBase64", { value: undefined, configurable: true, writable: true });
+  Object.defineProperty(Uint8Array.prototype, "toBase64", { value: undefined, configurable: true, writable: true });
+  try {
+    return await run();
+  } finally {
+    if (fromBase64Descriptor) Object.defineProperty(Uint8Array, "fromBase64", fromBase64Descriptor);
+    else delete Uint8Array.fromBase64;
+    if (toBase64Descriptor) Object.defineProperty(Uint8Array.prototype, "toBase64", toBase64Descriptor);
+    else delete Uint8Array.prototype.toBase64;
+  }
+}
 
 function baseUploadCfg(overrides = {}) {
   return {

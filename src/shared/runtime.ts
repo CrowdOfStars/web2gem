@@ -144,13 +144,18 @@ export function randomBytes(n: number): Uint8Array {
 }
 
 export function bytesToHex(bytes: Uint8Array): string {
-  if (typeof (bytes as any).toHex === "function") {
-    return (bytes as any).toHex();
+  const nativeToHex = (bytes as Uint8ArrayHex).toHex;
+  if (typeof nativeToHex === "function") {
+    return nativeToHex.call(bytes);
   }
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
+
+type Uint8ArrayHex = Uint8Array & {
+  toHex?: () => string;
+};
 
 /** 生成 `n` 个十六进制字符的随机串(n/2 个随机字节)。 */
 export function randHex(n: number): string {

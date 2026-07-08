@@ -2,7 +2,7 @@ import assert from "./assertions.js";
 import { attachmentResult, baseConfig, chunks, collectSSEData, fakeProvider, fakeStreamProvider, mod, resolvedModel, streamError, withConsoleLog, withFetch } from "./helpers.js";
 
 const TINY_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-const TINY_PNG_BYTES = Uint8Array.fromBase64(TINY_PNG_BASE64);
+const TINY_PNG_BYTES = mod.base64ToBytes(TINY_PNG_BASE64);
 
 function tinyPngFile(name = "input.png") {
   return new File([TINY_PNG_BYTES], name, { type: "image/png" });

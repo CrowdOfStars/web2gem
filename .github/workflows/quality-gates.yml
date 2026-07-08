@@ -71,14 +71,22 @@ jobs:
         run: pnpm check:size
 
   node-unit:
-    name: Required Gates - Node Unit (${{ matrix.os }})
+    name: Required Gates - Node Unit (${{ matrix.os }}, Node ${{ matrix.node-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-latest
-          - windows-latest
+        include:
+          - os: ubuntu-latest
+            node-version: "20"
+          - os: ubuntu-latest
+            node-version: "22"
+          - os: ubuntu-latest
+            node-version: "24"
+          - os: macos-latest
+            node-version: "26"
+          - os: windows-latest
+            node-version: "26"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -91,7 +99,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ matrix.node-version }}
           cache: pnpm
 
       - name: Install dependencies
