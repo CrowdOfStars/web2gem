@@ -85,6 +85,36 @@ export const cases = [
       "https://content-push.googleapis.com/upload",
     ]);
   }],
+  ["builds multipart bodies with fixed content length streams", async () => {
+    const lengths = [];
+    class FakeFixedLengthStream {
+      constructor(length) {
+        lengths.push(length);
+        const stream = new TransformStream();
+        this.readable = stream.readable;
+        this.writable = stream.writable;
+      }
+    }
+
+    await withPatchedGlobal("FixedLengthStream", FakeFixedLengthStream, async () => {
+      const multipart = mod.buildMultipartFileBody({
+        bytes: new Uint8Array([65, 66, 67]),
+        mime: " text/plain\r\n ",
+        filename: 'bad"name.txt',
+      });
+      const bytes = await bodyBytes(multipart.body);
+      const text = new TextDecoder().decode(bytes);
+
+      assert.deepEqual(lengths, [multipart.contentLength]);
+      assert.equal(bytes.byteLength, multipart.contentLength);
+      assert.match(multipart.contentType, /^multipart\/form-data; boundary=----web2gem-/);
+      assert.match(text, new RegExp(`--${escapeRegExp(multipart.boundary)}`));
+      assert.match(text, /name="file"; filename="bad_name\.txt"/);
+      assert.match(text, /Content-Type: text\/plain/);
+      assert.match(text, /\r\n\r\nABC\r\n/);
+      assert.match(text, new RegExp(`--${escapeRegExp(multipart.boundary)}--\\r\\n$`));
+    });
+  }],
   ["caches Gemini push IDs in the Workers cache API", async () => {
     mod.resetActiveGeminiCookieForTest();
     mod.resetGeminiUploadCachesForTest();
