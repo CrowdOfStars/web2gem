@@ -33,9 +33,20 @@ jobs:
       new_tag: ${{ steps.next_version.outputs.new_tag }}
       revision_sha: ${{ steps.revision.outputs.sha }}
     steps:
+      - name: Validate release source
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "${RELEASE_REF}" != "refs/heads/main" ]; then
+            echo "Versioned releases must be dispatched from main; got ${RELEASE_REF}." >&2
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@v5
         with:
+          ref: main
           fetch-depth: 0
           token: ${{ github.token }}
 

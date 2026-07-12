@@ -57,6 +57,69 @@ Registry-specific release workflows should not duplicate the version bump / tag 
 
 Registry publish jobs should check out `revision_sha` before building Docker images so image labels and contents match the version commit.
 
+## Scenario: Manual Versioned Release Source
+
+### 1. Scope / Trigger
+
+Use this contract for any `workflow_dispatch` workflow that can update package versions, create tags, or push commits to `main`.
+
+### 2. Signatures
+
+- `github.ref` / `GITHUB_REF` identifies the branch or tag selected for the manual workflow run.
+- `.github/workflows/reusable-versioned-release.yml` is the only workflow allowed to create the version commit and tag.
+- The release checkout explicitly uses `ref: main` with `fetch-depth: 0`.
+
+### 3. Contracts
+
+- A versioned release must fail unless `github.ref === "refs/heads/main"`.
+- Validate the source ref before checkout, dependency installation, version mutation, quality gates, tag creation, or pushes.
+- Pin the checkout to `main` independently of the guard; do not rely on the workflow UI's selected ref as the release source.
+- Registry-specific callers consume the reusable workflow outputs and must not push their own version commits or tags.
+
+### 4. Validation & Error Matrix
+
+- `refs/heads/main` -> continue to explicit `main` checkout.
+- Any feature branch -> fail with a clear source-ref error before dependency installation.
+- Tag ref -> fail before version calculation or mutation.
+- Missing or unexpected ref -> fail closed.
+
+### 5. Good/Base/Bad Cases
+
+- Good: validate `GITHUB_REF`, then use `actions/checkout` with `ref: main`.
+- Base: an operator selects `main` in the manual workflow UI and the release proceeds normally.
+- Bad: check out the selected ref implicitly and later run `git push origin HEAD:main`.
+
+### 6. Tests Required
+
+- Assert the source guard appears before checkout and dependency installation.
+- Assert the guard accepts only `refs/heads/main`.
+- Assert the checkout contains `ref: main` and `fetch-depth: 0`.
+- Keep the canonical release-gate assertions for the reusable workflow.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```yaml
+- uses: actions/checkout@v5
+  with:
+    fetch-depth: 0
+```
+
+#### Correct
+
+```yaml
+- name: Validate release source
+  env:
+    RELEASE_REF: ${{ github.ref }}
+  run: test "${RELEASE_REF}" = "refs/heads/main"
+
+- uses: actions/checkout@v5
+  with:
+    ref: main
+    fetch-depth: 0
+```
+
 ---
 
 ## Deterministic Quality Gates

@@ -393,7 +393,7 @@ export const cases = [
 		async () => {
 			const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 			const runner = await readFile("scripts/check-release.mjs", "utf8");
-			const workflows = await Promise.all([
+			const [releaseArtifacts, versionedRelease] = await Promise.all([
 				readFile(".github/workflows/release-artifacts.yml", "utf8"),
 				readFile(".github/workflows/reusable-versioned-release.yml", "utf8"),
 			]);
@@ -413,11 +413,34 @@ export const cases = [
 			]) {
 				assert.match(runner, new RegExp(`"${check.replace(":", "\\:")}"`));
 			}
-			for (const workflow of workflows) {
+			for (const workflow of [releaseArtifacts, versionedRelease]) {
 				assert.match(workflow, /pnpm check:release\s+pnpm docker:smoke/);
 				assert.doesNotMatch(workflow, /pnpm coverage:ci/);
 				assert.doesNotMatch(workflow, /\t/);
 			}
+			const sourceGuard = versionedRelease.indexOf(
+				"- name: Validate release source",
+			);
+			const checkout = versionedRelease.indexOf("- name: Checkout code");
+			const install = versionedRelease.indexOf("- name: Install dependencies");
+			assert.equal(
+				sourceGuard >= 0,
+				true,
+				"versioned release source guard is missing",
+			);
+			assert.equal(
+				sourceGuard < checkout && checkout < install,
+				true,
+				"release source must be validated before checkout and dependency install",
+			);
+			assert.match(
+				versionedRelease,
+				/RELEASE_REF: \$\{\{ github\.ref \}\}[\s\S]*?"refs\/heads\/main"/,
+			);
+			assert.match(
+				versionedRelease,
+				/uses: actions\/checkout@v5\s+with:\s+ref: main\s+fetch-depth: 0/,
+			);
 		},
 	],
 	[
