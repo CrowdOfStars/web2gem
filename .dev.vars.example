@@ -1,0 +1,6 @@
+# Optional Gemini Web credentials for authenticated features.
+GEMINI_COOKIE=
+SAPISID=
+
+# Optional public API auth. Leave empty to disable authentication.
+API_KEYS=

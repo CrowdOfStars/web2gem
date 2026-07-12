@@ -1,37 +1,41 @@
 {
-  "name": "web2gem",
-  "version": "1.1.0",
-  "private": true,
-  "type": "module",
-  "engines": {
-    "node": ">=22"
-  },
-  "packageManager": "pnpm@11.10.0",
-  "scripts": {
-    "build": "node scripts/build.mjs",
-    "check:static": "biome lint --diagnostic-level=error",
-    "typecheck": "tsc --noEmit",
-    "check:arch": "node scripts/check-architecture.mjs",
-    "check:size": "pnpm build && node scripts/check-bundle-size.mjs",
-    "check:bench": "node scripts/build.mjs --test-bundle && node scripts/check-benchmark.mjs",
-    "unit:quick": "node scripts/ensure-test-bundle-fresh.mjs && vitest run",
-    "unit": "node scripts/unit.mjs",
-    "coverage": "node scripts/coverage.mjs",
-    "coverage:ci": "node scripts/coverage.mjs --ci",
-    "smoke": "node scripts/build.mjs --test-bundle && node scripts/smoke.mjs",
-    "docker:smoke": "node scripts/docker-smoke.mjs",
-    "bench": "node scripts/build.mjs --test-bundle && node scripts/bench.mjs",
-    "docker:start": "node scripts/docker-server.mjs",
-    "dev": "pnpm build && wrangler dev",
-    "deploy": "pnpm build && wrangler deploy"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.5.3",
-    "@cloudflare/workers-types": "^5.20260708.1",
-    "@vitest/coverage-v8": "^4.1.10",
-    "esbuild": "^0.28.1",
-    "typescript": "^7.0.2",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.107.1"
-  }
+	"name": "web2gem",
+	"version": "1.1.0",
+	"private": true,
+	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
+	"packageManager": "pnpm@11.10.0",
+	"scripts": {
+		"build": "node scripts/build.mjs",
+		"check:static": "biome check --assist-enabled=false --diagnostic-level=warn --error-on-warnings",
+		"worker:types": "pnpm build && wrangler types worker-configuration.d.ts --env-interface WorkerBindings --include-runtime false --strict-vars false --env-file .dev.vars.example",
+		"check:worker-types": "pnpm build && wrangler types worker-configuration.d.ts --env-interface WorkerBindings --include-runtime false --strict-vars false --env-file .dev.vars.example --check",
+		"format": "biome format --write",
+		"typecheck": "tsc --noEmit",
+		"check:arch": "node scripts/check-architecture.mjs",
+		"check:size": "pnpm build && node scripts/check-bundle-size.mjs",
+		"check:bench": "node scripts/build.mjs --test-bundle && node scripts/check-benchmark.mjs",
+		"check:release": "node scripts/check-release.mjs",
+		"unit:quick": "node scripts/ensure-test-bundle-fresh.mjs && vitest run",
+		"unit": "node scripts/unit.mjs",
+		"coverage": "node scripts/coverage.mjs",
+		"coverage:ci": "node scripts/coverage.mjs --ci",
+		"smoke": "node scripts/build.mjs --test-bundle && node scripts/smoke.mjs",
+		"docker:smoke": "node scripts/docker-smoke.mjs",
+		"bench": "node scripts/build.mjs --test-bundle && node scripts/bench.mjs",
+		"docker:start": "node scripts/docker-server.mjs",
+		"dev": "pnpm build && wrangler dev",
+		"deploy": "pnpm build && wrangler deploy"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.3",
+		"@cloudflare/workers-types": "^5.20260708.1",
+		"@vitest/coverage-v8": "^4.1.10",
+		"esbuild": "^0.28.1",
+		"typescript": "^7.0.2",
+		"vitest": "^4.1.10",
+		"wrangler": "^4.107.1"
+	}
 }

@@ -74,16 +74,18 @@ if (chunkSize < 0) throw new Error("socket: invalid chunk size");
 
 ### 1. Scope / Trigger
 
-Use this contract when changing environment config parsing, config cache keys, request body size guards, or JSON response helpers.
+Use this contract when changing environment config parsing, config cache keys, request body size guards, generated-image hydration, or JSON response helpers.
 
 ### 2. Signatures
 
 - `CONFIG_ENV_KEYS` lists every environment key that affects `getConfig`.
 - `configCacheKey(env)` serializes the watched environment keys.
 - `getConfig(env)` returns a cached `RuntimeConfig` only when the env object and serialized key still match.
+- `REQUEST_BODY_MAX_BYTES` maps to `RuntimeConfig.request_body_max_bytes`, defaults to `16777216`, and accepts integers from `1` through `104857600`.
 - `requestContentLength(request)` returns a safe decimal byte length or `null`.
 - `readJsonRequest(request, { maxBodyBytes, oversizedError })` reads UTF-8 JSON objects with optional bounded body size.
 - `jsonTextResponse(body, status, extra)` returns an already-serialized JSON body.
+- `hydrateGeneratedImages(...)` bounds each generated image to 16 MiB and aggregate decoded image bytes to 48 MiB by default.
 
 ### 3. Contracts
 
@@ -92,8 +94,10 @@ Use this contract when changing environment config parsing, config cache keys, r
 - `requestContentLength` accepts only safe base-10 integer strings after trimming; invalid, signed, fractional, or unsafe values return `null`.
 - `readJsonRequest` must reject `Content-Length > maxBodyBytes` before reading the stream.
 - When the streamed body exceeds `maxBodyBytes`, cancel the reader and return the configured 413 error before UTF-8 decoding or JSON parsing.
+- The JSON budget includes inline Base64 text. Multipart image edits do not use `REQUEST_BODY_MAX_BYTES`; they remain governed by `GENERIC_FILE_UPLOAD_MAX_BYTES` and multipart overhead.
 - If a valid `Content-Length` is present and within limit, preallocate that size; if the stream exceeds the declared length, fall back to chunk merging while still enforcing `maxBodyBytes`.
 - Use `jsonTextResponse` when the caller already has a serialized JSON string and must avoid an extra `JSON.stringify`.
+- Generated-image hydration validates content length and streamed bytes before Base64 conversion, decrements aggregate budget by decoded byte length, cancels overflowing readers, and preserves the source URL when a budget is exceeded.
 
 ### 4. Validation & Error Matrix
 
@@ -101,6 +105,8 @@ Use this contract when changing environment config parsing, config cache keys, r
 - New env key used by config but missing from `CONFIG_ENV_KEYS` -> stale-cache bug; add the key and a cache regression test.
 - `Content-Length: 1000`, `maxBodyBytes: 999` -> 413 before body read.
 - Chunked body grows from 900 to 1001 bytes with `maxBodyBytes: 1000` -> cancel reader and return 413 using `1001 bytes > 1000`.
+- Generated image exceeds its individual or aggregate budget -> cancel its reader and preserve URL-only output instead of failing the whole response.
+- Invalid `REQUEST_BODY_MAX_BYTES` outside `1..104857600` -> sanitized `invalid_runtime_config` response.
 - Invalid `Content-Length: 01` or `+1` -> return `null` and use streamed byte accounting.
 - Valid UTF-8 non-object JSON -> 400 `request body must be a JSON object`.
 - Invalid UTF-8 -> 400 `invalid UTF-8 request body`.
@@ -119,6 +125,8 @@ Use this contract when changing environment config parsing, config cache keys, r
 - Unit test `requestContentLength` for valid, absent, malformed, and unsafe values.
 - Unit test `readJsonRequest` preflight rejection from `Content-Length`.
 - Unit test streamed body cancellation when bytes exceed `maxBodyBytes`.
+- Unit test multipart image edits remain independent from the JSON body limit.
+- Unit test generated-image individual and aggregate overflow cancellation plus URL fallback.
 - Run `pnpm typecheck`, `pnpm check:arch`, `pnpm unit`, and `pnpm smoke` after changing request parsing or config wiring.
 
 ### 7. Wrong vs Correct

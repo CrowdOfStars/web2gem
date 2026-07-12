@@ -1,22 +1,13 @@
-import type { CompletionProvider, CompletionTextInput } from "./ports";
-
 export type { StreamConsumeOptions } from "./stream-coalesce";
 export type {
-  BufferedToolTextStreamSummary,
-  CompletionStreamEvent,
-  GeminiCompletionInput,
-  PlainStreamSummary,
-  ToolSieveStreamSummary,
+	CompletionStreamEvent,
+	CompletionStreamLifecycle,
+	GeminiCompletionInput,
 } from "./stream-events";
 export {
-  consumeBufferedToolTextDeltas,
-  consumePlainTextDeltas,
-  consumeToolSieveTextDeltas,
-  streamBufferedToolTextCompletionEvents,
-  streamPlainCompletionEvents,
-  streamToolSieveCompletionEvents,
+	createCompletionStreamLifecycle,
+	streamBufferedToolTextCompletionEvents,
+	streamPlainCompletionEvents,
+	streamToolSieveCompletionEvents,
+	recordCompletionStreamEvent,
 } from "./stream-events";
-
-export async function runCompletionText(provider: CompletionProvider, input: CompletionTextInput) {
-  return provider.generateText(input);
-}

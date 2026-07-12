@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag to build/publish (e.g. v1.1.0)"
+        description: "Release tag to build/publish (e.g. v2.0.0)"
         required: true
         type: string
 
@@ -50,10 +50,7 @@ jobs:
 
       - name: Release Blocking Gates
         run: |
-          pnpm typecheck
-          pnpm check:arch
-          pnpm coverage:ci
-          pnpm smoke
+          pnpm check:release
           pnpm docker:smoke
 
       - name: Build Worker Artifact

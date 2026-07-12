@@ -59,6 +59,19 @@ Registry publish jobs should check out `revision_sha` before building Docker ima
 
 ---
 
+## Deterministic Quality Gates
+
+- Generated-artifact consumers must select the artifact produced by their own build phase. Benchmarks default to `dist/worker.test.js`; coverage subprocesses use `BENCH_TEST_BUNDLE=dist-coverage/worker.test.js`.
+- `pnpm check:bench` runs only the deterministic budget matrix and fails on missing, non-finite, or over-budget medians. Tune budgets only with repeated baseline evidence; do not hide regressions by gating the full noisy benchmark suite.
+- `pnpm check:size` measures the production Worker bundle against the configured byte budget.
+- `pnpm worker:types` generates `worker-configuration.d.ts` from `wrangler.jsonc` and `.dev.vars.example`; `pnpm check:worker-types` must reproduce it byte-for-byte.
+- `WorkerBindings` contains only portable runtime vars and secret names. This edition has no database binding or persisted-account configuration.
+- Worker type generation builds the main module first, uses `--include-runtime false` and `--strict-vars false`, and leaves runtime value validation to `getConfig`.
+
+Run benchmark, bundle-size, Worker-type freshness, coverage, and smoke gates after changing generated sources, performance-sensitive code, or release scripts.
+
+---
+
 ## Validation
 
 For workflow changes, run:

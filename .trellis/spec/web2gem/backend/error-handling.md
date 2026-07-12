@@ -8,7 +8,9 @@ OpenAI-compatible routes convert parse failures with `openAIErrorResponse`. Goog
 
 ## Upstream Errors
 
-Use `upstreamErrorMessage` and `upstreamErrorCode` from `src/shared/runtime.ts` when converting unknown errors. OpenAI upstream failures should use OpenAI-style error envelopes when possible.
+Use `upstreamErrorMessage` and `upstreamErrorCode` from `src/shared/errors.ts` when converting known upstream errors. Unexpected application-boundary failures return the stable `internal_server_error` envelope; raw exception messages remain log-only.
+
+Completion streaming uses one `CompletionStreamLifecycle` owner for emitted output, terminal issues, tool calls, policy violations, and completion counts. Failures before output use native protocol errors; failures after partial output preserve model content, emit warning metadata, and then emit the protocol's required terminal sequence. Error text must never become assistant/model output, and abort errors must propagate.
 
 Do not silently change request semantics after a failure. A request with an explicit `model` must either use that model or return `model_not_found`; do not fall back to `DEFAULT_MODEL` for empty or unknown explicit model values. A request that requires authenticated Gemini text-file attachments must either complete with those attachments or return the corresponding error; do not retry it as anonymous or without failed context files. Request-local image and generic file inputs are the exception: if validation, fetch, or upload is unavailable or partially fails, the worker may continue as text-only only when it adds a dropped-attachment note to the prompt and logs safe metadata. Transport-only socket-to-fetch fallback is allowed because it preserves headers, cookie, model, body, and file references.
 
@@ -174,7 +176,7 @@ try {
 
 ## Top-Level Worker Errors
 
-`src/index.ts` catches unhandled route errors, logs through `log(cfg, ...)`, and returns a JSON 500 response. Keep this as the final fallback, not the primary validation mechanism.
+`src/app.ts` catches unhandled route errors, logs a safe summary with the request ID, and returns a sanitized JSON 500 response. Keep this as the final fallback, not the primary validation mechanism. `src/index.ts` remains a thin Worker adapter and must not add a second error-mapping path.
 
 ## Scenario: Oversized Inline Long Context
 

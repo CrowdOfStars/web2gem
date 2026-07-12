@@ -3,19 +3,23 @@
 ## Source Layout
 
 - The root `package.json` / `src/` tree is the default `web2gem` package. The Cloudflare Worker build and architecture guard are scoped to this root package unless a task explicitly expands the scope.
-- `src/index.ts` owns Worker routing, CORS wrapping, auth gating, and top-level error conversion.
-- `src/http/` owns HTTP boundary concerns only. Generic CORS/auth/JSON/SSE helpers live under `http/core/`, stream framing helpers under `http/stream/`, and protocol adapters under `http/openai/` and `http/google/`.
+- `src/app.ts` is the Web-standard application composition root. It owns route matching, CORS wrapping, auth gating, direct environment-cookie provider composition, request IDs, and top-level error conversion.
+- `src/index.ts` is the thin Cloudflare Worker entrypoint. It delegates `fetch` to `handleApplicationRequest` and exports only stable public helpers; protocol route branches must not be added there.
+- `src/http/` owns HTTP boundary concerns only. Generic CORS/auth/JSON/SSE helpers live under `http/core/`, stream framing and async-write helpers under `http/stream/`, and protocol adapters under `http/openai/` and `http/google/`.
+- `src/http/openai/images.ts` owns image route orchestration. JSON and multipart input normalization, upload-size enforcement, and image-part coercion belong in `src/http/openai/images-input.ts`.
 - HTTP protocol adapters should import `http/core/*` and `http/stream/*` owner modules directly. `src/http/index.ts` is a public/top-level barrel for the Worker entrypoint and compatibility exports, not an internal dependency for protocol adapters.
-- `src/completion/` owns provider-neutral completion contracts and shared business behavior: prompt/context preparation, provider text-generation ports, empty-output handling, stream/tool-sieve event consumption, and completion turn finalization. It must not import `src/gemini/**` directly.
+- `src/completion/` owns provider-neutral completion contracts and shared business behavior: prompt/context preparation, provider text-generation ports, stream/tool-sieve event generation, one `CompletionStreamLifecycle` reducer, and completion turn finalization. Protocol adapters must not mirror reducer-owned terminal state or use callback-style stream consumption APIs.
 - `src/promptcompat/` converts OpenAI Responses, OpenAI chat, and Google content shapes into prompt text and file references.
 - `src/toolcall/` owns tool-call prompt formatting, parsing, policy validation, and schema normalization.
 - `src/toolcall/index.ts` is a compatibility barrel only. Implementation modules outside `src/toolcall/` should import concrete owner modules such as `toolcall/content`, `toolcall/tool-bundle`, `toolcall/policy-openai`, `toolcall/policy-google`, `toolcall/google`, `toolcall/dsml`, `toolcall/openai-format`, `toolcall/prompt-format`, or `toolcall/structured` instead of the broad barrel.
 - `src/toolstream/` owns streamed tool-call sieve state.
 - `src/gemini/` owns Gemini Web protocol details, transport, and upload behavior. `gemini/client/index.ts` should stay an orchestration layer; payload/header construction, response parsing, retry helpers, and domain error classification live in sibling client modules.
+- `src/gemini/concurrency.ts` owns bounded ordered concurrency used by Gemini operations such as uploads. Callers provide operation-specific limits; do not duplicate worker-pool loops.
+- `src/gemini/client/generated-images.ts` owns generated-image URL candidates, cookie/browser download headers, bounded byte hydration, supported output-format mapping, and URL fallback.
 - `src/gemini/transport/http.ts` owns the unified upstream HTTP entry. It may choose `cloudflare:sockets` first and fall back to `fetch` only when request semantics are preserved.
 - `src/gemini/transport/socket.ts` is the public socket transport facade. If the socket implementation is decomposed, keep public exports compatible from this module and move internals into owner modules under `src/gemini/transport/`.
 - `src/gemini/completion-provider.ts` is the Gemini adapter for `src/completion/ports.ts`. It may import completion port types; other Gemini implementation modules should not depend on completion business modules.
-- `src/shared/` must stay leaf-level and provider-neutral.
+- `src/shared/` must stay leaf-level and provider-neutral. Production code imports concrete owners such as `encoding.ts`, `logging.ts`, `abort.ts`, `errors.ts`, and `crypto.ts`; `runtime.ts` is compatibility-only. Constant-time string comparison belongs to `crypto.ts`, while Gemini SAPISID hashing belongs to `src/gemini/auth.ts`.
 - Media and attachment helpers live under `src/attachments/**`; do not add compatibility shims under `src/shared/`.
 - `scripts/docker-server.mjs` adapts Node HTTP requests to the Worker `fetch` entrypoint. Do not duplicate route, auth, completion, or provider logic in the Docker server path.
 
@@ -36,7 +40,7 @@ Use the completion provider port when code needs model text generation, request-
 
 ### 3. Contracts
 
-- `src/index.ts` is the composition root: create the concrete Gemini provider there and pass it into HTTP handlers.
+- `src/app.ts` is the composition root: create the concrete Gemini provider there from `GEMINI_COOKIE` / `SAPISID` configuration and pass it into HTTP handlers.
 - HTTP handlers may depend on completion ports/events, but must not call `gemini/client` or `gemini/uploads`.
 - Completion modules may depend on prompt compatibility, tool-call, toolstream, shared, config, and model types, but not `src/gemini/**`.
 - Stream adapters should format protocol-specific SSE frames from completion events rather than coordinating provider callbacks directly.
@@ -151,11 +155,12 @@ const fileRefs = mergeFileRefs(
 
 ## Architecture Guard
 
-`scripts/check-architecture.mjs` is the source of truth for import boundaries. It checks both forbidden imports and source import cycles. Run `pnpm check:arch` after moving modules or changing imports.
+`scripts/check-architecture.mjs` is the source of truth for import boundaries. It checks forbidden imports plus authored TypeScript file and top-level owner cycles; top-level owners are discovered from `src/` and generated sources are excluded. Run `pnpm check:arch` after moving modules or changing imports.
 
 Current enforced rules include:
 
 - `src/shared/**` must not import feature layers such as `gemini`, `http`, `promptcompat`, `toolcall`, or `toolstream`.
+- `src/attachments/**` may depend on its own modules and provider-neutral `src/shared/**` helpers, but not completion, Gemini, HTTP, prompt compatibility, model, config, tool-call, or tool-stream owners.
 - `src/completion/**` must not import `src/gemini/**`; use `src/completion/ports.ts` plus `src/gemini/completion-provider.ts`.
 - `src/gemini/**` may import completion port types only through the provider adapter path.
 - HTTP adapters must not call `gemini/client` directly.
@@ -186,7 +191,7 @@ import { validateRequiredToolCalls, type OpenAIToolCall } from "../toolcall";
 
 ## Generated Files
 
-Do not hand-edit `dist/worker.js`; it is generated from `src/index.ts` by `scripts/build.mjs`. The root `worker.js` is a legacy shim.
+Do not hand-edit `dist/worker.js`; it is generated from `src/index.ts` by `scripts/build.mjs`. The root `worker.js` is a legacy shim. Do not hand-edit `worker-configuration.d.ts`; regenerate it from portable Wrangler vars and secret names with `pnpm worker:types`.
 
 ## Scenario: Gemini Upstream Transport Facade
 
