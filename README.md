@@ -208,7 +208,7 @@ Both deployment modes can run without secrets. Configure optional secrets only w
 
 ### Option 1: Deploy the release single-file Worker
 
-Download the release build artifact `worker.js` from the [Releases](https://github.com/Guardinary/web2gem/releases) page, open your Cloudflare Worker in the dashboard, and replace the Worker source with the contents of that file. In the Worker dashboard settings, add the `nodejs_compat` compatibility flag.
+Download the main-edition artifact `web2gem-main-worker.js` from the [Releases](https://github.com/Guardinary/web2gem/releases) page, open your Cloudflare Worker in the dashboard, and replace the Worker source with the contents of that file. In the Worker dashboard settings, add the `nodejs_compat` compatibility flag.
 
 ![Cloudflare Worker settings showing nodejs_compat](./docs/images/cloudflare-worker-settings-nodejs-compat.png)
 
@@ -216,9 +216,9 @@ Each release publishes these assets:
 
 | Asset | Use |
 |-------|-----|
-| `worker.js` | Single-file Cloudflare Worker bundle. |
-| `web2gem_<tag>_docker_linux_amd64.tar.gz` | Docker image archive for `linux/amd64`. |
-| `web2gem_<tag>_docker_linux_arm64.tar.gz` | Docker image archive for `linux/arm64`. |
+| `web2gem-main-worker.js` | Main-edition single-file Cloudflare Worker bundle. |
+| `web2gem-main_<tag>_docker_linux_amd64.tar.gz` | Main-edition Docker image archive for `linux/amd64`. |
+| `web2gem-main_<tag>_docker_linux_arm64.tar.gz` | Main-edition Docker image archive for `linux/arm64`. |
 | `sha256sums.txt` | Checksums for the released files. |
 
 Secrets are optional. In the Worker dashboard, open the Worker settings and add variables/secrets only for the features you need. Set `API_KEYS` when you want to protect shared access, and set `GEMINI_COOKIE` when Pro routing, large-context text attachments, or signed-in Gemini Web behavior is needed.
@@ -258,7 +258,7 @@ docker run --rm -p 52389:52389 --env-file .env web2gem
 Release pages also provide prebuilt Docker image archives. Download the archive matching your platform, load it, and run the tagged image:
 
 ```sh
-gzip -dc web2gem_<tag>_docker_linux_amd64.tar.gz | docker load
+gzip -dc web2gem-main_<tag>_docker_linux_amd64.tar.gz | docker load
 docker run --rm -p 52389:52389 --env-file .env web2gem:<tag>
 ```
 
@@ -356,7 +356,7 @@ The build script emits two bundles:
 | `dist/worker.js`      | `src/index.ts`      | Production Worker deployed by Wrangler.         |
 | `dist/worker.test.js` | `src/test-index.ts` | Local test bundle with internal helper exports. |
 
-Maintainers create a versioned `main` release from **Actions → Versioned Release**. One run creates the version/tag and publishes GHCR plus any selected Docker Hub or Aliyun targets from the same immutable revision.
+Maintainers run **Actions → Release Main Edition** for `main` releases and **Actions → Release Account Pool Edition** for `gemini-account-pool` releases. Both entrypoints are maintained on `main` and publish from the selected edition's immutable revision.
 
 ## Testing
 

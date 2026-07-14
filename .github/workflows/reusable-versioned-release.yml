@@ -3,6 +3,26 @@ name: Reusable Versioned Release
 on:
   workflow_call:
     inputs:
+      edition:
+        description: "Release edition"
+        required: true
+        type: string
+      source_branch:
+        description: "Branch whose version is released"
+        required: true
+        type: string
+      tag_prefix:
+        description: "Edition-specific release tag prefix"
+        required: true
+        type: string
+      asset_prefix:
+        description: "Edition-specific release asset prefix"
+        required: true
+        type: string
+      image_repository:
+        description: "Edition-specific container repository name"
+        required: true
+        type: string
       version_type:
         description: "Version bump type"
         required: true
@@ -33,9 +53,14 @@ jobs:
       new_tag: ${{ steps.next_version.outputs.new_tag }}
       revision_sha: ${{ steps.revision.outputs.sha }}
     steps:
-      - name: Validate release source
+      - name: Validate release source and edition
         env:
           RELEASE_REF: ${{ github.ref }}
+          EDITION: ${{ inputs.edition }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
+          ASSET_PREFIX: ${{ inputs.asset_prefix }}
+          IMAGE_REPOSITORY: ${{ inputs.image_repository }}
         run: |
           set -euo pipefail
           if [ "${RELEASE_REF}" != "refs/heads/main" ]; then
@@ -43,10 +68,21 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout code
+          release_key="${EDITION}|${SOURCE_BRANCH}|${TAG_PREFIX}|${ASSET_PREFIX}|${IMAGE_REPOSITORY}"
+          case "${release_key}" in
+            "main|main|v|web2gem-main|web2gem"|\
+            "account-pool|gemini-account-pool|pool-v|web2gem-account-pool|web2gem-account-pool")
+              ;;
+            *)
+              echo "Unsupported release edition metadata: ${release_key}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout release branch
         uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ inputs.source_branch }}
           fetch-depth: 0
           token: ${{ github.token }}
 
@@ -68,25 +104,25 @@ jobs:
         id: get_version
         run: |
           set -euo pipefail
-          LATEST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")"
-          TAG_VERSION="${LATEST_TAG#v}"
+          LATEST_TAG="$(git tag --list "${TAG_PREFIX}[0-9]*" --sort=-v:refname | head -n 1)"
+          TAG_VERSION="0.0.0"
+          if [ -n "${LATEST_TAG}" ]; then
+            TAG_VERSION="${LATEST_TAG:${#TAG_PREFIX}}"
+          fi
           FILE_VERSION="$(node -p "require('./package.json').version")"
 
-          function version_gt() { test "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1"; }
-
-          if version_gt "${FILE_VERSION}" "${TAG_VERSION}"; then
-            VERSION="${FILE_VERSION}"
-          else
-            VERSION="${TAG_VERSION}"
-          fi
-
-          echo "Current version: ${VERSION}"
+          VERSION="$(printf '%s\n' "${TAG_VERSION}" "${FILE_VERSION}" | sort -V | tail -n 1)"
+          echo "Current ${EDITION:-release} version: ${VERSION}"
           echo "current_version=${VERSION}" >> "${GITHUB_OUTPUT}"
+        env:
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
+          EDITION: ${{ inputs.edition }}
 
       - name: Calculate next version
         id: next_version
         env:
           VERSION_TYPE: ${{ inputs.version_type }}
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
         run: |
           set -euo pipefail
           VERSION="${{ steps.get_version.outputs.current_version }}"
@@ -104,14 +140,18 @@ jobs:
             minor)
               NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"
               ;;
-            *)
+            patch)
               NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+              ;;
+            *)
+              echo "Unsupported version type: ${VERSION_TYPE}" >&2
+              exit 1
               ;;
           esac
 
           echo "New version: ${NEW_VERSION}"
           echo "new_version=${NEW_VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "new_tag=v${NEW_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "new_tag=${TAG_PREFIX}${NEW_VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Validate release tag is available
         run: |
@@ -133,6 +173,10 @@ jobs:
           pnpm docker:smoke
 
       - name: Commit package version and create tag
+        env:
+          EDITION: ${{ inputs.edition }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          NEW_TAG: ${{ steps.next_version.outputs.new_tag }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -140,12 +184,11 @@ jobs:
 
           git add package.json pnpm-lock.yaml src/config/index.ts
           if ! git diff --cached --quiet; then
-            git commit -m "chore: bump version to ${{ steps.next_version.outputs.new_tag }} [skip ci]"
+            git commit -m "chore(release): bump ${EDITION} to ${NEW_TAG} [skip ci]"
           fi
 
-          NEW_TAG="${{ steps.next_version.outputs.new_tag }}"
-          git tag -a "${NEW_TAG}" -m "Release ${NEW_TAG}"
-          git push origin HEAD:main "${NEW_TAG}"
+          git tag -a "${NEW_TAG}" -m "Release ${EDITION} ${NEW_TAG}"
+          git push --atomic origin "HEAD:${SOURCE_BRANCH}" "refs/tags/${NEW_TAG}"
 
       - name: Capture release revision
         id: revision

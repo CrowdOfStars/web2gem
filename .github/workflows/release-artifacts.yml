@@ -1,13 +1,26 @@
 name: Release Artifacts
 
 on:
-  release:
-    types:
-      - published
   workflow_call:
     inputs:
+      edition:
+        description: "Release edition"
+        required: true
+        type: string
+      tag_prefix:
+        description: "Edition-specific release tag prefix"
+        required: true
+        type: string
+      asset_prefix:
+        description: "Edition-specific release asset prefix"
+        required: true
+        type: string
+      image_repository:
+        description: "Edition-specific container repository name"
+        required: true
+        type: string
       release_tag:
-        description: "Release tag to publish (for example v2.0.0)"
+        description: "Release tag to publish"
         required: true
         type: string
       revision_sha:
@@ -29,42 +42,53 @@ on:
         required: false
         default: false
         type: boolean
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: "Release tag to build/publish (for example v2.0.0)"
-        required: true
-        type: string
-      publish_dockerhub:
-        description: "Also publish to Docker Hub"
-        required: true
-        default: false
-        type: boolean
-      publish_aliyun:
-        description: "Also publish to Aliyun Container Registry"
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: write
   packages: write
 
 concurrency:
-  group: release-artifacts-${{ inputs.release_tag || github.event.release.tag_name }}
+  group: release-artifacts-${{ inputs.edition }}-${{ inputs.release_tag }}
   cancel-in-progress: false
 
 env:
   NODE_VERSION: "26"
   PNPM_VERSION: "11.10.0"
-  RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
-  RELEASE_REVISION: ${{ inputs.revision_sha || inputs.release_tag || github.event.release.tag_name }}
-  RELEASE_CACHE_SCOPE: release-image
+  EDITION: ${{ inputs.edition }}
+  TAG_PREFIX: ${{ inputs.tag_prefix }}
+  ASSET_PREFIX: ${{ inputs.asset_prefix }}
+  IMAGE_REPOSITORY: ${{ inputs.image_repository }}
+  RELEASE_TAG: ${{ inputs.release_tag }}
+  RELEASE_REVISION: ${{ inputs.revision_sha }}
+  RELEASE_CACHE_SCOPE: release-image-${{ inputs.edition }}
 
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate release metadata
+        run: |
+          set -euo pipefail
+          release_key="${EDITION}|${TAG_PREFIX}|${ASSET_PREFIX}|${IMAGE_REPOSITORY}"
+          case "${release_key}" in
+            "main|v|web2gem-main|web2gem"|\
+            "account-pool|pool-v|web2gem-account-pool|web2gem-account-pool")
+              ;;
+            *)
+              echo "Unsupported release edition metadata: ${release_key}" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ "${RELEASE_TAG}" != "${TAG_PREFIX}"* ]]; then
+            echo "Release tag ${RELEASE_TAG} does not use prefix ${TAG_PREFIX}." >&2
+            exit 1
+          fi
+          if [[ ! "${RELEASE_REVISION}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Release revision must be a full commit SHA." >&2
+            exit 1
+          fi
+
       - name: Checkout release revision
         uses: actions/checkout@v5
         with:
@@ -96,13 +120,8 @@ jobs:
       - name: Prepare Release Assets
         run: |
           set -euo pipefail
-          if [ -z "${RELEASE_TAG}" ] || [ -z "${RELEASE_REVISION}" ]; then
-            echo "release tag and revision must be non-empty." >&2
-            exit 1
-          fi
-
           mkdir -p release-assets
-          cp dist/worker.js "release-assets/worker.js"
+          cp dist/worker.js "release-assets/${ASSET_PREFIX}-worker.js"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -126,7 +145,6 @@ jobs:
       - name: Validate and collect image tags
         id: image_tags
         env:
-          GHCR_IMAGE: ghcr.io/${{ github.repository }}
           PUBLISH_DOCKERHUB: ${{ inputs.publish_dockerhub }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           HAS_DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN != '' }}
@@ -137,11 +155,13 @@ jobs:
           HAS_ALIYUN_REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD != '' }}
         run: |
           set -euo pipefail
-          version="${RELEASE_TAG#v}"
+          version="${RELEASE_TAG:${#TAG_PREFIX}}"
+          ghcr_owner="${GITHUB_REPOSITORY_OWNER,,}"
+          ghcr_image="ghcr.io/${ghcr_owner}/${IMAGE_REPOSITORY}"
           tags=(
-            "${GHCR_IMAGE}:${RELEASE_TAG}"
-            "${GHCR_IMAGE}:${version}"
-            "${GHCR_IMAGE}:latest"
+            "${ghcr_image}:${RELEASE_TAG}"
+            "${ghcr_image}:${version}"
+            "${ghcr_image}:latest"
           )
 
           if [ "${PUBLISH_DOCKERHUB}" = "true" ]; then
@@ -150,9 +170,9 @@ jobs:
               exit 1
             fi
             tags+=(
-              "${DOCKERHUB_USERNAME}/web2gem:${RELEASE_TAG}"
-              "${DOCKERHUB_USERNAME}/web2gem:${version}"
-              "${DOCKERHUB_USERNAME}/web2gem:latest"
+              "${DOCKERHUB_USERNAME}/${IMAGE_REPOSITORY}:${RELEASE_TAG}"
+              "${DOCKERHUB_USERNAME}/${IMAGE_REPOSITORY}:${version}"
+              "${DOCKERHUB_USERNAME}/${IMAGE_REPOSITORY}:latest"
             )
           fi
 
@@ -161,7 +181,7 @@ jobs:
               echo "Aliyun publication requires registry, namespace, user, and password secrets." >&2
               exit 1
             fi
-            aliyun_image="${ALIYUN_REGISTRY}/${ALIYUN_REGISTRY_NAMESPACE}/web2gem"
+            aliyun_image="${ALIYUN_REGISTRY}/${ALIYUN_REGISTRY_NAMESPACE}/${IMAGE_REPOSITORY}"
             tags+=(
               "${aliyun_image}:${RELEASE_TAG}"
               "${aliyun_image}:${version}"
@@ -221,38 +241,38 @@ jobs:
 
           docker buildx build \
             --platform linux/amd64 \
-            --tag "web2gem:${RELEASE_TAG}" \
-            --tag "web2gem:latest" \
+            --tag "${IMAGE_REPOSITORY}:${RELEASE_TAG}" \
+            --tag "${IMAGE_REPOSITORY}:latest" \
             --label "org.opencontainers.image.version=${{ steps.image_tags.outputs.version }}" \
             --label "org.opencontainers.image.revision=${RELEASE_REVISION}" \
             --cache-from "type=gha,scope=${RELEASE_CACHE_SCOPE}" \
-            --output "type=docker,dest=release-assets/web2gem_${RELEASE_TAG}_docker_linux_amd64.tar" \
+            --output "type=docker,dest=release-assets/${ASSET_PREFIX}_${RELEASE_TAG}_docker_linux_amd64.tar" \
             .
 
           docker buildx build \
             --platform linux/arm64 \
-            --tag "web2gem:${RELEASE_TAG}" \
-            --tag "web2gem:latest" \
+            --tag "${IMAGE_REPOSITORY}:${RELEASE_TAG}" \
+            --tag "${IMAGE_REPOSITORY}:latest" \
             --label "org.opencontainers.image.version=${{ steps.image_tags.outputs.version }}" \
             --label "org.opencontainers.image.revision=${RELEASE_REVISION}" \
             --cache-from "type=gha,scope=${RELEASE_CACHE_SCOPE}" \
-            --output "type=docker,dest=release-assets/web2gem_${RELEASE_TAG}_docker_linux_arm64.tar" \
+            --output "type=docker,dest=release-assets/${ASSET_PREFIX}_${RELEASE_TAG}_docker_linux_arm64.tar" \
             .
 
-          gzip -f "release-assets/web2gem_${RELEASE_TAG}_docker_linux_amd64.tar"
-          gzip -f "release-assets/web2gem_${RELEASE_TAG}_docker_linux_arm64.tar"
+          gzip -f "release-assets/${ASSET_PREFIX}_${RELEASE_TAG}_docker_linux_amd64.tar"
+          gzip -f "release-assets/${ASSET_PREFIX}_${RELEASE_TAG}_docker_linux_arm64.tar"
 
       - name: Generate checksums
         run: |
           set -euo pipefail
-          (cd release-assets && sha256sum worker.js *.tar.gz > sha256sums.txt)
+          (cd release-assets && sha256sum "${ASSET_PREFIX}-worker.js" *.tar.gz > sha256sums.txt)
 
       - name: Validate release assets
         run: |
           set -euo pipefail
-          test -s release-assets/worker.js
-          test -s "release-assets/web2gem_${RELEASE_TAG}_docker_linux_amd64.tar.gz"
-          test -s "release-assets/web2gem_${RELEASE_TAG}_docker_linux_arm64.tar.gz"
+          test -s "release-assets/${ASSET_PREFIX}-worker.js"
+          test -s "release-assets/${ASSET_PREFIX}_${RELEASE_TAG}_docker_linux_amd64.tar.gz"
+          test -s "release-assets/${ASSET_PREFIX}_${RELEASE_TAG}_docker_linux_arm64.tar.gz"
           test -s release-assets/sha256sums.txt
 
       - name: Upload Release Assets
@@ -261,14 +281,14 @@ jobs:
         run: |
           set -euo pipefail
           FILES=(
-            release-assets/worker.js
-            "release-assets/web2gem_${RELEASE_TAG}_docker_linux_amd64.tar.gz"
-            "release-assets/web2gem_${RELEASE_TAG}_docker_linux_arm64.tar.gz"
+            "release-assets/${ASSET_PREFIX}-worker.js"
+            "release-assets/${ASSET_PREFIX}_${RELEASE_TAG}_docker_linux_amd64.tar.gz"
+            "release-assets/${ASSET_PREFIX}_${RELEASE_TAG}_docker_linux_arm64.tar.gz"
             release-assets/sha256sums.txt
           )
 
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             gh release upload "${RELEASE_TAG}" "${FILES[@]}" --clobber
           else
-            gh release create "${RELEASE_TAG}" "${FILES[@]}" --title "${RELEASE_TAG}" --notes ""
+            gh release create "${RELEASE_TAG}" "${FILES[@]}" --title "web2gem ${EDITION} ${RELEASE_TAG}" --notes ""
           fi

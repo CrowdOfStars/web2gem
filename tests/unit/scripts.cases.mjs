@@ -498,15 +498,16 @@ export const cases = [
 		},
 	],
 	[
-		"keeps release workflows on the complete canonical quality gate",
+		"keeps edition releases isolated behind the main-branch control plane",
 		async () => {
 			const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 			const runner = await readFile("scripts/check-release.mjs", "utf8");
-			const [releaseArtifacts, versionedRelease, releaseEntry] =
+			const [releaseArtifacts, versionedRelease, mainRelease, poolRelease] =
 				await Promise.all([
 					readFile(".github/workflows/release-artifacts.yml", "utf8"),
 					readFile(".github/workflows/reusable-versioned-release.yml", "utf8"),
-					readFile(".github/workflows/release.yml", "utf8"),
+					readFile(".github/workflows/release-main.yml", "utf8"),
+					readFile(".github/workflows/release-account-pool.yml", "utf8"),
 				]);
 			assert.equal(
 				packageJson.scripts["check:release"],
@@ -530,9 +531,11 @@ export const cases = [
 				assert.doesNotMatch(workflow, /\t/);
 			}
 			const sourceGuard = versionedRelease.indexOf(
-				"- name: Validate release source",
+				"- name: Validate release source and edition",
 			);
-			const checkout = versionedRelease.indexOf("- name: Checkout code");
+			const checkout = versionedRelease.indexOf(
+				"- name: Checkout release branch",
+			);
 			const install = versionedRelease.indexOf("- name: Install dependencies");
 			assert.equal(
 				sourceGuard >= 0,
@@ -550,17 +553,64 @@ export const cases = [
 			);
 			assert.match(
 				versionedRelease,
-				/uses: actions\/checkout@v5\s+with:\s+ref: main\s+fetch-depth: 0/,
+				/ref: \$\{\{ inputs\.source_branch \}\}\s+fetch-depth: 0/,
 			);
+			assert.match(versionedRelease, /git tag --list "\$\{TAG_PREFIX\}\[0-9\]\*"/);
+			assert.doesNotMatch(versionedRelease, /git describe --tags/);
 			assert.match(
-				releaseEntry,
-				/uses: \.\/\.github\/workflows\/reusable-versioned-release\.yml[\s\S]*uses: \.\/\.github\/workflows\/release-artifacts\.yml/,
+				versionedRelease,
+				/git push --atomic origin "HEAD:\$\{SOURCE_BRANCH\}" "refs\/tags\/\$\{NEW_TAG\}"/,
 			);
-			assert.doesNotMatch(releaseEntry, /docker\/build-push-action/);
+
+			for (const [workflow, expected] of [
+				[
+					mainRelease,
+					{
+						edition: "main",
+						branch: "main",
+						tagPrefix: "v",
+						assetPrefix: "web2gem-main",
+						imageRepository: "web2gem",
+					},
+				],
+				[
+					poolRelease,
+					{
+						edition: "account-pool",
+						branch: "gemini-account-pool",
+						tagPrefix: "pool-v",
+						assetPrefix: "web2gem-account-pool",
+						imageRepository: "web2gem-account-pool",
+					},
+				],
+			]) {
+				assert.match(
+					workflow,
+					/uses: \.\/\.github\/workflows\/reusable-versioned-release\.yml[\s\S]*uses: \.\/\.github\/workflows\/release-artifacts\.yml/,
+				);
+				assert.match(workflow, new RegExp(`edition: ${expected.edition}`));
+				assert.match(workflow, new RegExp(`source_branch: ${expected.branch}`));
+				assert.match(
+					workflow,
+					new RegExp(`tag_prefix: ${expected.tagPrefix}(?:\\n|$)`),
+				);
+				assert.match(
+					workflow,
+					new RegExp(`asset_prefix: ${expected.assetPrefix}`),
+				);
+				assert.match(
+					workflow,
+					new RegExp(`image_repository: ${expected.imageRepository}`),
+				);
+				assert.match(workflow, /group: versioned-release/);
+				assert.doesNotMatch(workflow, /docker\/build-push-action/);
+			}
+
 			assert.match(releaseArtifacts, /workflow_call:/);
+			assert.doesNotMatch(releaseArtifacts, /workflow_dispatch:|\n  release:/);
 			assert.match(
 				releaseArtifacts,
-				/release_tag:[\s\S]*revision_sha:[\s\S]*prepared_revision:[\s\S]*publish_dockerhub:[\s\S]*publish_aliyun:/,
+				/edition:[\s\S]*tag_prefix:[\s\S]*asset_prefix:[\s\S]*image_repository:[\s\S]*release_tag:[\s\S]*revision_sha:/,
 			);
 			assert.equal(
 				[...releaseArtifacts.matchAll(/uses: docker\/build-push-action@v6/g)]
@@ -575,6 +625,22 @@ export const cases = [
 			assert.match(
 				releaseArtifacts,
 				/cache-from: type=gha,scope=\$\{\{ env\.RELEASE_CACHE_SCOPE \}\}[\s\S]*cache-to: type=gha,mode=max,scope=\$\{\{ env\.RELEASE_CACHE_SCOPE \}\}/,
+			);
+			assert.match(
+				releaseArtifacts,
+				/RELEASE_CACHE_SCOPE: release-image-\$\{\{ inputs\.edition \}\}/,
+			);
+			assert.match(
+				releaseArtifacts,
+				/ghcr\.io\/\$\{ghcr_owner\}\/\$\{IMAGE_REPOSITORY\}/,
+			);
+			assert.match(
+				releaseArtifacts,
+				/release-assets\/\$\{ASSET_PREFIX\}-worker\.js/,
+			);
+			await assert.rejects(
+				readFile(".github/workflows/release.yml", "utf8"),
+				/ENOENT/,
 			);
 			await assert.rejects(
 				readFile(".github/workflows/release-dockerhub.yml", "utf8"),

@@ -1,4 +1,4 @@
-name: Versioned Release
+name: Release Main Edition
 
 on:
   workflow_dispatch:
@@ -35,6 +35,11 @@ jobs:
   prepare:
     uses: ./.github/workflows/reusable-versioned-release.yml
     with:
+      edition: main
+      source_branch: main
+      tag_prefix: v
+      asset_prefix: web2gem-main
+      image_repository: web2gem
       version_type: ${{ inputs.version_type }}
     secrets: inherit
 
@@ -42,6 +47,10 @@ jobs:
     needs: prepare
     uses: ./.github/workflows/release-artifacts.yml
     with:
+      edition: main
+      tag_prefix: v
+      asset_prefix: web2gem-main
+      image_repository: web2gem
       release_tag: ${{ needs.prepare.outputs.new_tag }}
       revision_sha: ${{ needs.prepare.outputs.revision_sha }}
       prepared_revision: true

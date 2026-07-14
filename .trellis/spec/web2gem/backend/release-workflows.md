@@ -7,9 +7,11 @@
 ## Workflow Layout
 
 - `.github/workflows/quality-gates.yml` runs pull request, `dev`, and `main` quality checks.
-- `.github/workflows/release-artifacts.yml` is the reusable publication workflow. It builds GitHub Release assets, publishes GHCR, and can publish the same release image to Docker Hub and Aliyun.
-- `.github/workflows/reusable-versioned-release.yml` owns shared version calculation, package version update, release gates, commit, tag push, and release revision output.
-- `.github/workflows/release.yml` is the single manual versioned-release entrypoint. It calls the reusable version workflow once, then calls the publication workflow with the captured revision.
+- `.github/workflows/release-main.yml` is the manual dispatcher for the `main` edition.
+- `.github/workflows/release-account-pool.yml` is the manual dispatcher for the `gemini-account-pool` edition.
+- `.github/workflows/reusable-versioned-release.yml` owns parameterized version calculation, branch checkout, package/Worker version updates, release gates, version commit, edition-specific tag creation, and immutable revision output.
+- `.github/workflows/release-artifacts.yml` is callable only by the two dispatchers. It builds edition-specific GitHub assets and publishes the matching GHCR repository plus optional Docker Hub/Aliyun repositories.
+- The `gemini-account-pool` branch does not carry independent release workflows. Its release control plane is maintained on `main`; the branch retains its own quality gates and upstream-sync workflow.
 
 Keep workflow names stable unless the GitHub Actions UI and README are updated together.
 
@@ -19,12 +21,12 @@ Keep workflow names stable unless the GitHub Actions UI and README are updated t
 
 GitHub Releases must expose only these build artifacts plus checksum metadata:
 
-- `worker.js`
-- `web2gem_<tag>_docker_linux_amd64.tar.gz`
-- `web2gem_<tag>_docker_linux_arm64.tar.gz`
+- `web2gem-main-worker.js` or `web2gem-account-pool-worker.js`
+- `<asset-prefix>_<tag>_docker_linux_amd64.tar.gz`
+- `<asset-prefix>_<tag>_docker_linux_arm64.tar.gz`
 - `sha256sums.txt`
 
-Do not add bundle tarballs for `worker.js`; the raw `worker.js` asset is the Cloudflare Worker deployment artifact. Docker image archives must be split by platform and named with the `web2gem_<tag>_docker_linux_<arch>.tar.gz` pattern.
+Do not add bundle tarballs for the Worker asset; the raw edition-named JavaScript file is the Cloudflare Worker deployment artifact. Docker image archives must be split by platform and use the same edition-specific asset prefix.
 
 Before uploading assets, the release workflow should verify that every expected file exists and is non-empty. The upload list should stay explicit instead of relying on broad globs that can include stale artifacts.
 
@@ -32,21 +34,24 @@ Before uploading assets, the release workflow should verify that every expected 
 
 ## Docker Image Publishing
 
-Docker images are named `web2gem` and are tagged with:
+Release identity is isolated by edition:
 
-- the release tag, for example `v1.1.1`
-- the bare package version, for example `1.1.1`
-- `latest`
+| Edition | Source branch | Tag prefix | Asset prefix | Image repository |
+| --- | --- | --- | --- | --- |
+| Main | `main` | `v` | `web2gem-main` | `web2gem` |
+| Account pool | `gemini-account-pool` | `pool-v` | `web2gem-account-pool` | `web2gem-account-pool` |
 
-Docker archive assets should load into a readable local image tag, at minimum `web2gem:<tag>`. Registry images should include OCI labels for the package version and the actual release commit revision.
+Each image repository receives the edition release tag, bare package version, and its own `latest` tag. Docker archive assets should load into the matching local repository and release tag. Registry images must include OCI labels for the package version and the actual release commit revision.
 
 ---
 
 ## Versioned Release Safety
 
-Only one version-bumping registry release workflow should run at a time. Use a shared concurrency group for workflows that update `package.json`, create tags, or push version commits.
+Only one version-bumping release workflow should run at a time across both editions. Both dispatchers use the same concurrency group because they update branches and create repository-wide tags.
 
-Before running expensive release gates, validate that the target tag does not already exist. If a workflow creates a version commit before publishing Docker images, capture `git rev-parse HEAD` after the commit and use that SHA for image revision labels.
+Before running expensive release gates, validate the dispatcher ref and fixed edition metadata. Query the latest tag with the edition prefix; never use an unfiltered `git describe --tags` because tags from the other edition must not influence version calculation.
+
+Validate that the target tag does not already exist. After creating the version commit, capture `git rev-parse HEAD` and use that SHA for every asset and image build.
 
 Registry-specific release workflows should not duplicate the version bump / tag logic. Call `.github/workflows/reusable-versioned-release.yml` and consume its outputs:
 
@@ -56,50 +61,60 @@ Registry-specific release workflows should not duplicate the version bump / tag 
 
 Registry publish jobs should check out `revision_sha` before building Docker images so image labels and contents match the version commit.
 
-## Scenario: Unified Release Publication
+## Scenario: Unified Edition Release Control Plane
 
 ### 1. Scope / Trigger
 
-Use this contract when changing registry publication, GitHub Release assets, release workflow inputs, or Docker build reuse.
+Use this contract when changing release dispatchers, version/tag ownership, registry publication, GitHub Release assets, or Docker build reuse.
 
 ### 2. Signatures
 
-- `release.yml` inputs: `version_type`, `publish_dockerhub`, `publish_aliyun`.
-- `release-artifacts.yml` reusable inputs: `release_tag`, `revision_sha`, `prepared_revision`, `publish_dockerhub`, `publish_aliyun`.
+- `release-main.yml` and `release-account-pool.yml` inputs: `version_type`, `publish_dockerhub`, `publish_aliyun`.
+- Shared edition inputs: `edition`, `source_branch`, `tag_prefix`, `asset_prefix`, `image_repository`.
+- `release-artifacts.yml` also receives `release_tag`, `revision_sha`, `prepared_revision`, and optional registry booleans.
 - `reusable-versioned-release.yml` outputs: `new_version`, `new_tag`, `revision_sha`.
 
 ### 3. Contracts
 
-- A manual release calls the version-authority workflow exactly once.
+- Both manual entrypoints live on `main` and accept runs only from `refs/heads/main`.
+- Each dispatcher passes one fixed, complete edition identity to both reusable workflows.
+- A manual release calls the version-authority workflow exactly once, then publication exactly once.
+- Version calculation reads only tags matching the selected edition prefix.
+- The version commit is pushed back to the selected source branch, and the tag is unique across the repository.
 - All registry tags and release assets use the returned `revision_sha`.
 - The publication workflow always publishes GHCR and may add Docker Hub/Aliyun tags when their boolean inputs are true.
 - Selected registry credentials must be validated before the image build; credentials stay out of the version-authority job.
 - Use one multi-platform publication build containing all requested registry tags.
-- Platform archive exports use the same checked-out revision, labels, and explicit GHA cache scope.
-- Keep the release-event and manual-tag entrypoints for publishing an existing tag; they run canonical release gates unless `prepared_revision` is true from the version-authority caller.
+- Platform archive exports use the same checked-out revision, labels, and an edition-specific GHA cache scope.
+- `release-artifacts.yml` has no `release` or independent `workflow_dispatch` trigger because those contexts cannot safely infer an edition.
 
 ### 4. Validation & Error Matrix
 
-- Prepared versioned release -> skip duplicate release gates, build/publish the captured revision.
-- Existing tag publication -> run canonical release gates before publication.
+- Main dispatcher -> update `main`, create `v<version>`, publish `web2gem-main-*` assets and `web2gem` images.
+- Account-pool dispatcher -> update `gemini-account-pool`, create `pool-v<version>`, publish `web2gem-account-pool-*` assets and images.
+- Prepared versioned release -> skip duplicate release gates and build/publish the captured revision.
+- Unsupported or mixed edition metadata -> fail before checkout or dependency installation.
 - Docker Hub selected with missing username/token -> fail before registry login/build.
 - Aliyun selected with incomplete registry/namespace/user/password -> fail before registry login/build.
 - Optional registry not selected -> do not expose or use that registry's credentials/tags.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: one prepare call followed by one reusable publication call with immutable outputs.
-- Base: publish GHCR, Worker asset, archives, and checksums with both optional registries disabled.
+- Good: one edition dispatcher calls one prepare workflow and one publication workflow with immutable outputs.
+- Base: publish the selected edition's GHCR image, Worker asset, archives, and checksums with both optional registries disabled.
+- Bad: use an unfiltered latest tag and let a `pool-v*` tag advance the main version or a `v*` tag advance the pool version.
+- Bad: publish both editions into `ghcr.io/guardinary/web2gem:latest`.
 - Bad: separate Docker Hub and Aliyun workflows each bump the package version and create their own tag.
 - Bad: invoke `docker/build-push-action` once per registry for the same revision.
 
 ### 6. Tests Required
 
-- Assert `release.yml` calls both reusable workflows and contains no image build.
-- Assert the publication workflow exposes the reusable inputs and contains exactly one multi-registry `docker/build-push-action` step.
-- Assert the old independent Docker Hub versioned workflow does not exist.
-- Assert publication and archive builds share an explicit cache scope.
-- Preserve explicit asset-name and checksum validation.
+- Assert both dispatchers pass their fixed edition identity to both reusable workflows and contain no image build.
+- Assert tag lookup is prefix-filtered and `git describe --tags` is absent.
+- Assert the publication workflow is `workflow_call`-only and contains exactly one multi-registry `docker/build-push-action` step.
+- Assert the legacy `release.yml` and independent Docker Hub workflow do not exist.
+- Assert publication and archive builds share an edition-specific cache scope.
+- Preserve explicit edition asset-name and checksum validation.
 
 ### 7. Wrong vs Correct
 
@@ -107,10 +122,11 @@ Use this contract when changing registry publication, GitHub Release assets, rel
 
 ```yaml
 jobs:
-  dockerhub:
-    uses: ./.github/workflows/reusable-versioned-release.yml
-  aliyun:
-    uses: ./.github/workflows/reusable-versioned-release.yml
+  publish:
+    uses: ./.github/workflows/release-artifacts.yml
+    with:
+      image_repository: web2gem
+      release_tag: ${{ github.event.release.tag_name }}
 ```
 
 #### Correct
@@ -119,51 +135,66 @@ jobs:
 jobs:
   prepare:
     uses: ./.github/workflows/reusable-versioned-release.yml
+    with:
+      edition: account-pool
+      source_branch: gemini-account-pool
+      tag_prefix: pool-v
+      asset_prefix: web2gem-account-pool
+      image_repository: web2gem-account-pool
   publish:
     needs: prepare
     uses: ./.github/workflows/release-artifacts.yml
     with:
+      edition: account-pool
+      tag_prefix: pool-v
+      asset_prefix: web2gem-account-pool
+      image_repository: web2gem-account-pool
       release_tag: ${{ needs.prepare.outputs.new_tag }}
       revision_sha: ${{ needs.prepare.outputs.revision_sha }}
 ```
 
-## Scenario: Manual Versioned Release Source
+## Scenario: Main-Controlled Branch Release Source
 
 ### 1. Scope / Trigger
 
-Use this contract for any `workflow_dispatch` workflow that can update package versions, create tags, or push commits to `main`.
+Use this contract for either `workflow_dispatch` entrypoint that can update package versions, create tags, or push a version commit to an edition branch.
 
 ### 2. Signatures
 
 - `github.ref` / `GITHUB_REF` identifies the branch or tag selected for the manual workflow run.
 - `.github/workflows/reusable-versioned-release.yml` is the only workflow allowed to create the version commit and tag.
-- The release checkout explicitly uses `ref: main` with `fetch-depth: 0`.
+- `source_branch` selects `main` or `gemini-account-pool` after the fixed edition tuple is validated.
 
 ### 3. Contracts
 
 - A versioned release must fail unless `github.ref === "refs/heads/main"`.
-- Validate the source ref before checkout, dependency installation, version mutation, quality gates, tag creation, or pushes.
-- Pin the checkout to `main` independently of the guard; do not rely on the workflow UI's selected ref as the release source.
+- Validate the source ref and full edition tuple before checkout, dependency installation, version mutation, quality gates, tag creation, or pushes.
+- Explicitly checkout `source_branch` with `fetch-depth: 0`; the caller ref controls which workflow definition runs, while the input controls which edition source is released.
+- Push the version commit to `HEAD:<source_branch>` and create only `<tag_prefix><version>`.
 - Registry-specific callers consume the reusable workflow outputs and must not push their own version commits or tags.
 
 ### 4. Validation & Error Matrix
 
-- `refs/heads/main` -> continue to explicit `main` checkout.
+- Main dispatcher on `refs/heads/main` -> checkout and update `main`.
+- Account-pool dispatcher on `refs/heads/main` -> checkout and update `gemini-account-pool`.
 - Any feature branch -> fail with a clear source-ref error before dependency installation.
 - Tag ref -> fail before version calculation or mutation.
-- Missing or unexpected ref -> fail closed.
+- Mixed or unsupported edition tuple -> fail closed.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: validate `GITHUB_REF`, then use `actions/checkout` with `ref: main`.
-- Base: an operator selects `main` in the manual workflow UI and the release proceeds normally.
-- Bad: check out the selected ref implicitly and later run `git push origin HEAD:main`.
+- Good: validate `GITHUB_REF` and the fixed tuple, then checkout `inputs.source_branch`.
+- Base: an operator selects `main` in the manual workflow UI and either dispatcher proceeds against its declared edition branch.
+- Bad: duplicate the account-pool release logic on `gemini-account-pool` and allow the two copies to drift.
+- Bad: check out the caller ref implicitly and later push to a different hard-coded branch.
 
 ### 6. Tests Required
 
 - Assert the source guard appears before checkout and dependency installation.
 - Assert the guard accepts only `refs/heads/main`.
-- Assert the checkout contains `ref: main` and `fetch-depth: 0`.
+- Assert the edition tuple allowlist contains exactly the main and account-pool identities.
+- Assert checkout contains `ref: ${{ inputs.source_branch }}` and `fetch-depth: 0`.
+- Assert the push target uses `SOURCE_BRANCH` and the tag uses `TAG_PREFIX`.
 - Keep the canonical release-gate assertions for the reusable workflow.
 
 ### 7. Wrong vs Correct
@@ -173,7 +204,7 @@ Use this contract for any `workflow_dispatch` workflow that can update package v
 ```yaml
 - uses: actions/checkout@v5
   with:
-    fetch-depth: 0
+    ref: main
 ```
 
 #### Correct
@@ -186,7 +217,7 @@ Use this contract for any `workflow_dispatch` workflow that can update package v
 
 - uses: actions/checkout@v5
   with:
-    ref: main
+    ref: ${{ inputs.source_branch }}
     fetch-depth: 0
 ```
 

@@ -208,7 +208,7 @@ curl https://your-web2gem.example/v1beta/models/gemini-3.5-flash:generateContent
 
 ### 方式一：通过 Release 单文件 Worker 产物部署
 
-从项目 [Releases](https://github.com/Guardinary/web2gem/releases) 页面下载构建产物 `worker.js`，在 Cloudflare Worker 控制台打开你的 Worker，将 Worker 源码替换为该文件内容。然后在 Worker 控制台设置中添加 `nodejs_compat` 兼容性标记。
+从项目 [Releases](https://github.com/Guardinary/web2gem/releases) 页面下载主版本产物 `web2gem-main-worker.js`，在 Cloudflare Worker 控制台打开你的 Worker，将 Worker 源码替换为该文件内容。然后在 Worker 控制台设置中添加 `nodejs_compat` 兼容性标记。
 
 ![Cloudflare Worker 设置中的 nodejs_compat 兼容性标记](./docs/images/cloudflare-worker-settings-nodejs-compat.png)
 
@@ -216,9 +216,9 @@ curl https://your-web2gem.example/v1beta/models/gemini-3.5-flash:generateContent
 
 | 文件 | 用途 |
 |------|------|
-| `worker.js` | 单文件 Cloudflare Worker bundle。 |
-| `web2gem_<tag>_docker_linux_amd64.tar.gz` | `linux/amd64` Docker 镜像归档。 |
-| `web2gem_<tag>_docker_linux_arm64.tar.gz` | `linux/arm64` Docker 镜像归档。 |
+| `web2gem-main-worker.js` | 主版本单文件 Cloudflare Worker bundle。 |
+| `web2gem-main_<tag>_docker_linux_amd64.tar.gz` | 主版本 `linux/amd64` Docker 镜像归档。 |
+| `web2gem-main_<tag>_docker_linux_arm64.tar.gz` | 主版本 `linux/arm64` Docker 镜像归档。 |
 | `sha256sums.txt` | 发布文件校验和。 |
 
 Secrets 是可选项。在 Worker 控制台中打开该 Worker 的设置页，只为需要的功能添加变量或 Secrets。需要保护共享访问时设置 `API_KEYS`；需要 Pro 路由、大上下文文本附件或已登录 Gemini Web 行为时设置 `GEMINI_COOKIE`。
@@ -258,7 +258,7 @@ docker run --rm -p 52389:52389 --env-file .env web2gem
 Release 页面也提供预构建 Docker 镜像归档。下载与你的平台匹配的归档，加载后运行对应 tag：
 
 ```sh
-gzip -dc web2gem_<tag>_docker_linux_amd64.tar.gz | docker load
+gzip -dc web2gem-main_<tag>_docker_linux_amd64.tar.gz | docker load
 docker run --rm -p 52389:52389 --env-file .env web2gem:<tag>
 ```
 
@@ -356,7 +356,7 @@ pnpm smoke
 | `dist/worker.js`      | `src/index.ts`      | 由 Wrangler 部署的生产 Worker。   |
 | `dist/worker.test.js` | `src/test-index.ts` | 带内部辅助导出的本地测试 bundle。 |
 
-维护者通过 **Actions → Versioned Release** 创建 `main` 的版本发布。一次运行会创建版本与 tag，并从同一个不可变 revision 发布 GHCR 及所选的 Docker Hub 或阿里云镜像。
+维护者通过 **Actions → Release Main Edition** 发布 `main`，通过 **Actions → Release Account Pool Edition** 发布 `gemini-account-pool`。两个入口都维护在 `main`，并从对应版本的不可变 revision 构建发布产物。
 
 ## 测试
 
